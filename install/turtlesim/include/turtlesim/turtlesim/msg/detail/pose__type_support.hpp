@@ -1,0 +1,1 @@
+/home/aaphatak/ros2_ws/build/turtlesim/rosidl_generator_cpp/turtlesim/msg/detail/pose__type_support.hpp

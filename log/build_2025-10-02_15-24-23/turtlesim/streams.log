@@ -1,0 +1,315 @@
+[0.119s] Invoking command in '/home/aaphatak/ros2_ws/build/turtlesim': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/aaphatak/ros2_ws/src/ros_tutorials/turtlesim -DCMAKE_INSTALL_PREFIX=/home/aaphatak/ros2_ws/install/turtlesim
+[0.130s] -- Found ament_cmake: 2.5.4 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.142s] -- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter 
+[0.183s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.187s] -- Found ament_index_cpp: 1.8.1 (/opt/ros/jazzy/share/ament_index_cpp/cmake)
+[0.188s] -- Found geometry_msgs: 5.3.6 (/opt/ros/jazzy/share/geometry_msgs/cmake)
+[0.203s] -- Found rosidl_generator_c: 4.6.6 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)
+[0.207s] -- Found rosidl_generator_cpp: 4.6.6 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)
+[0.214s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.222s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.254s] -- Found rcl_interfaces: 2.0.3 (/opt/ros/jazzy/share/rcl_interfaces/cmake)
+[0.277s] -- Found rclcpp: 28.1.12 (/opt/ros/jazzy/share/rclcpp/cmake)
+[0.301s] -- Found rmw_implementation_cmake: 7.3.2 (/opt/ros/jazzy/share/rmw_implementation_cmake/cmake)
+[0.304s] -- Found rmw_fastrtps_cpp: 8.4.3 (/opt/ros/jazzy/share/rmw_fastrtps_cpp/cmake)
+[0.351s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.428s] -- Found rclcpp_action: 28.1.12 (/opt/ros/jazzy/share/rclcpp_action/cmake)
+[0.460s] -- Found rosidl_default_generators: 1.6.0 (/opt/ros/jazzy/share/rosidl_default_generators/cmake)
+[0.470s] -- Found rosidl_adapter: 4.6.6 (/opt/ros/jazzy/share/rosidl_adapter/cmake)
+[0.478s] -- Found std_srvs: 5.3.6 (/opt/ros/jazzy/share/std_srvs/cmake)
+[0.709s] -- Found ament_cmake_ros: 0.12.0 (/opt/ros/jazzy/share/ament_cmake_ros/cmake)
+[0.826s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.862s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.863s] -- Found python_cmake_module: 0.11.1 (/opt/ros/jazzy/share/python_cmake_module/cmake)
+[1.013s] -- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter Development NumPy Development.Module Development.Embed 
+[1.026s] -- Found ament_lint_auto: 0.17.3 (/opt/ros/jazzy/share/ament_lint_auto/cmake)
+[1.031s] -- Added test 'copyright' to check source files copyright and LICENSE
+[1.032s] -- Added test 'cppcheck' to perform static code analysis on C / C++ code
+[1.033s] -- Configured cppcheck include dirs: /home/aaphatak/ros2_ws/src/ros_tutorials/turtlesim/include
+[1.033s] -- Configured cppcheck exclude dirs and/or files: 
+[1.034s] -- Added test 'cpplint' to check C / C++ code against the Google style
+[1.034s] -- Configured cpplint exclude dirs and/or files: 
+[1.034s] -- Added test 'flake8' to check Python code syntax and style conventions
+[1.034s] -- Configured 'flake8' exclude dirs and/or files: 
+[1.037s] -- Added test 'lint_cmake' to check CMake code style
+[1.037s] -- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257
+[1.038s] -- Added test 'uncrustify' to check C / C++ code style
+[1.038s] -- Configured uncrustify additional arguments: 
+[1.038s] -- Added test 'xmllint' to check XML markup files
+[1.039s] -- Configuring done (0.9s)
+[1.088s] -- Generating done (0.0s)
+[1.107s] -- Build files have been written to: /home/aaphatak/ros2_ws/build/turtlesim
+[1.206s] Invoked command in '/home/aaphatak/ros2_ws/build/turtlesim' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/aaphatak/ros2_ws/src/ros_tutorials/turtlesim -DCMAKE_INSTALL_PREFIX=/home/aaphatak/ros2_ws/install/turtlesim
+[1.207s] Invoking command in '/home/aaphatak/ros2_ws/build/turtlesim': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/aaphatak/ros2_ws/build/turtlesim -- -j4 -l4
+[1.240s] [  0%] Built target turtlesim__rosidl_generator_type_description
+[1.260s] [  0%] Built target ament_cmake_python_symlink_turtlesim
+[1.260s] [  1%] Built target turtlesim__cpp
+[1.269s] [ 24%] Built target turtlesim__rosidl_generator_c
+[1.305s] [ 33%] Built target turtlesim__rosidl_typesupport_cpp
+[1.308s] [ 42%] Built target turtlesim__rosidl_typesupport_fastrtps_cpp
+[1.311s] [ 50%] Built target turtlesim__rosidl_typesupport_fastrtps_c
+[1.342s] [ 59%] Built target turtlesim__rosidl_typesupport_introspection_c
+[1.342s] [ 67%] Built target turtlesim__rosidl_typesupport_introspection_cpp
+[1.352s] [ 76%] Built target turtlesim__rosidl_typesupport_c
+[1.380s] [ 78%] Built target turtle_teleop_key
+[1.383s] [ 79%] Built target draw_square
+[1.389s] running egg_info
+[1.392s] [ 84%] Built target turtlesim_node
+[1.399s] writing turtlesim.egg-info/PKG-INFO
+[1.400s] writing dependency_links to turtlesim.egg-info/dependency_links.txt
+[1.400s] writing top-level names to turtlesim.egg-info/top_level.txt
+[1.403s] [ 84%] Built target turtlesim
+[1.417s] [ 86%] Built target mimic
+[1.434s] [ 86%] Built target turtlesim__py
+[1.446s] reading manifest file 'turtlesim.egg-info/SOURCES.txt'
+[1.447s] writing manifest file 'turtlesim.egg-info/SOURCES.txt'
+[1.459s] [ 94%] Built target turtlesim__rosidl_generator_py
+[1.471s] [ 94%] Built target ament_cmake_python_build_turtlesim_egg
+[1.492s] [ 96%] Built target turtlesim_s__rosidl_typesupport_introspection_c
+[1.502s] [ 98%] Built target turtlesim_s__rosidl_typesupport_c
+[1.503s] [100%] Built target turtlesim_s__rosidl_typesupport_fastrtps_c
+[1.509s] Invoked command in '/home/aaphatak/ros2_ws/build/turtlesim' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/aaphatak/ros2_ws/build/turtlesim -- -j4 -l4
+[1.509s] Invoking command in '/home/aaphatak/ros2_ws/build/turtlesim': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/aaphatak/ros2_ws/build/turtlesim
+[1.514s] -- Install configuration: ""
+[1.515s] -- Execute custom install script
+[1.515s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/ament_index/resource_index/rosidl_interfaces/turtlesim
+[1.515s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/action/RotateAbsolute.json
+[1.515s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Color.json
+[1.515s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Pose.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Kill.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/SetPen.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Spawn.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportAbsolute.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportRelative.json
+[1.516s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__functions.h
+[1.517s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__struct.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__type_support.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/rotate_absolute.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/color.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__functions.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__struct.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__type_support.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__functions.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__struct.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__type_support.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/pose.h
+[1.518s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/rosidl_generator_c__visibility_control.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__functions.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__struct.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__type_support.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__functions.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__struct.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__type_support.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__functions.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__struct.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__type_support.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__functions.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__struct.h
+[1.519s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__type_support.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__functions.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__struct.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__type_support.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/kill.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/set_pen.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/spawn.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/teleport_absolute.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/teleport_relative.h
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/library_path.sh
+[1.520s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/library_path.dsv
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/rosidl_typesupport_fastrtps_c__visibility_control.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__rosidl_typesupport_fastrtps_c.h
+[1.521s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__rosidl_typesupport_fastrtps_c.h
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__rosidl_typesupport_fastrtps_c.h
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__builder.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__struct.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__traits.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__type_support.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/rotate_absolute.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/color.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__builder.hpp
+[1.522s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__struct.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__traits.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__type_support.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__builder.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__struct.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__traits.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__type_support.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/pose.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/rosidl_generator_cpp__visibility_control.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__builder.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__struct.hpp
+[1.523s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__traits.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__type_support.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__builder.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__struct.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__traits.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__type_support.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__builder.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__struct.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__traits.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__type_support.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__builder.hpp
+[1.524s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__struct.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__traits.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__type_support.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__builder.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__struct.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__traits.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__type_support.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/kill.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/set_pen.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/spawn.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/teleport_absolute.hpp
+[1.525s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/teleport_relative.hpp
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__rosidl_typesupport_fastrtps_cpp.hpp
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__rosidl_typesupport_fastrtps_cpp.hpp
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__rosidl_typesupport_fastrtps_cpp.hpp
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/rosidl_typesupport_fastrtps_cpp__visibility_control.h
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__rosidl_typesupport_fastrtps_cpp.hpp
+[1.526s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__rosidl_typesupport_fastrtps_cpp.hpp
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__rosidl_typesupport_fastrtps_cpp.hpp
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__rosidl_typesupport_fastrtps_cpp.hpp
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__rosidl_typesupport_fastrtps_cpp.hpp
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__rosidl_typesupport_introspection_c.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__rosidl_typesupport_introspection_c.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__rosidl_typesupport_introspection_c.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/rosidl_typesupport_introspection_c__visibility_control.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__rosidl_typesupport_introspection_c.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__rosidl_typesupport_introspection_c.h
+[1.527s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__rosidl_typesupport_introspection_c.h
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__rosidl_typesupport_introspection_c.h
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__rosidl_typesupport_introspection_c.h
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/action/detail/rotate_absolute__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/color__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/msg/detail/pose__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/kill__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/set_pen__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/spawn__rosidl_typesupport_introspection_cpp.hpp
+[1.528s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_absolute__rosidl_typesupport_introspection_cpp.hpp
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/include/turtlesim/turtlesim/srv/detail/teleport_relative__rosidl_typesupport_introspection_cpp.hpp
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/pythonpath.sh
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/pythonpath.dsv
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim-1.8.3-py3.12.egg-info/PKG-INFO
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim-1.8.3-py3.12.egg-info/SOURCES.txt
+[1.529s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim-1.8.3-py3.12.egg-info/dependency_links.txt
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim-1.8.3-py3.12.egg-info/top_level.txt
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/__init__.py
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/_turtlesim_s.ep.rosidl_typesupport_c.c
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/_turtlesim_s.ep.rosidl_typesupport_fastrtps_c.c
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/_turtlesim_s.ep.rosidl_typesupport_introspection_c.c
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/action/__init__.py
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/action/_rotate_absolute.py
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/action/_rotate_absolute_s.c
+[1.530s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg/__init__.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg/_color.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg/_color_s.c
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg/_pose.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg/_pose_s.c
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/__init__.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_kill.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_kill_s.c
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_set_pen.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_set_pen_s.c
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_spawn.py
+[1.531s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_spawn_s.c
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_teleport_absolute.py
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_teleport_absolute_s.c
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_teleport_relative.py
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv/_teleport_relative_s.c
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_c.so
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_fastrtps_c.so
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_introspection_c.so
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_fastrtps_c.so
+[1.532s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_introspection_c.so
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/turtlesim_s__rosidl_typesupport_c.so
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/action/RotateAbsolute.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Color.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Pose.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Kill.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/SetPen.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Spawn.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportAbsolute.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportRelative.idl
+[1.533s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/action/RotateAbsolute.action
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Color.msg
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/msg/Pose.msg
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Kill.srv
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/SetPen.srv
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/Spawn.srv
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportAbsolute.srv
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/srv/TeleportRelative.srv
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/turtlesim/turtlesim_node
+[1.534s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/turtlesim/turtle_teleop_key
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/turtlesim/draw_square
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/lib/turtlesim/mimic
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/launch/multisim.launch.py
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/ament_index/resource_index/package_run_dependencies/turtlesim
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/ament_index/resource_index/parent_prefix_path/turtlesim
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/ament_prefix_path.sh
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/ament_prefix_path.dsv
+[1.535s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/path.sh
+[1.536s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/environment/path.dsv
+[1.536s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/local_setup.bash
+[1.536s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/local_setup.sh
+[1.536s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/local_setup.zsh
+[1.536s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/local_setup.dsv
+[1.536s] -- Symlinking: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/package.dsv
+[1.541s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/ament_index/resource_index/packages/turtlesim
+[1.541s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/rosidl_cmake-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/ament_cmake_export_dependencies-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/ament_cmake_export_include_directories-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/ament_cmake_export_libraries-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/ament_cmake_export_targets-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/rosidl_cmake_export_typesupport_targets-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesimConfig.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesimConfig-version.cmake
+[1.542s] -- Up-to-date symlink: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/package.xml
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_generator_c.so
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_fastrtps_c.so
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_fastrtps_cpp.so
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_introspection_c.so
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_c.so
+[1.543s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_introspection_cpp.so
+[1.544s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_typesupport_cpp.so
+[1.567s] Listing '/home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim'...
+[1.567s] Compiling '/home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/__init__.py'...
+[1.567s] Listing '/home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/action'...
+[1.567s] Listing '/home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/msg'...
+[1.567s] Listing '/home/aaphatak/ros2_ws/install/turtlesim/lib/python3.12/site-packages/turtlesim/srv'...
+[1.571s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/lib/libturtlesim__rosidl_generator_py.so
+[1.571s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images
+[1.571s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/iron.png
+[1.571s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/eloquent.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/jazzy.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/bouncy.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/galactic.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/dashing.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/humble.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/crystal.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/ardent.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/foxy.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/images/rolling.png
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_generator_cExport.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_generator_cExport-noconfig.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_typesupport_fastrtps_cExport.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_typesupport_fastrtps_cExport-noconfig.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_generator_cppExport.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_typesupport_fastrtps_cppExport.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_typesupport_fastrtps_cppExport-noconfig.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_introspection_cExport.cmake
+[1.573s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_introspection_cExport-noconfig.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_cExport.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_cExport-noconfig.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_introspection_cppExport.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_introspection_cppExport-noconfig.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_cppExport.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/turtlesim__rosidl_typesupport_cppExport-noconfig.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_generator_pyExport.cmake
+[1.574s] -- Up-to-date: /home/aaphatak/ros2_ws/install/turtlesim/share/turtlesim/cmake/export_turtlesim__rosidl_generator_pyExport-noconfig.cmake
+[1.581s] Invoked command in '/home/aaphatak/ros2_ws/build/turtlesim' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/aaphatak/ros2_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/install/turtlebot3_example:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/ros2_ws/src/turtlebot3_ws/install/turtlebot3_example:/home/aaphatak/turtlebot3_ws/install/turtlebot3_teleop:/home/aaphatak/turtlebot3_ws/install/turtlebot3_example:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/aaphatak/ros2_ws/build/turtlesim
