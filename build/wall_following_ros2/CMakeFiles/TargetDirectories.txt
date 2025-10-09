@@ -1,9 +1,0 @@
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/uninstall.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/wall_following_ros2_uninstall.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/test.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/edit_cache.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/rebuild_cache.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/list_install_components.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/install.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/install/local.dir
-/home/aaphatak/ros2_ws/build/wall_following_ros2/CMakeFiles/install/strip.dir
