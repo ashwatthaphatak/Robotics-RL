@@ -1,0 +1,33 @@
+# ROS 2 colcon build directories
+build/
+install/
+log/
+
+# ROS 1 catkin build directories (if applicable)
+devel/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Colcon/ROS test results
+testing/
+*.test_results/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
+
+# Other
+*.log
+*.DS_Store
