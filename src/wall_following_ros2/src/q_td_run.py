@@ -53,9 +53,9 @@ class QLearningWallFollower(Node):
         self.max_linear       = 0.28   # velocity cap
         self.step_penalty     = -0.05  # used in both sparse & shaped
         self.collision_penalty = -200.0
-        self.forward_bonus     = 1.0
-        self.spin_penalty      = -15.0
-        self.spin_threshold    = 12
+        self.forward_bonus     = 1.5
+        self.spin_penalty      = -20.0
+        self.spin_threshold    = 4
         self._spin_count       = 0
         self._last_turn_dir    = 0.0
 
@@ -124,9 +124,9 @@ class QLearningWallFollower(Node):
 
         # Distance bins
         self.bounds = {
-            'TOO_CLOSE': (0.0, 0.3),
-            'CLOSE':     (0.3, 0.6),
-            'MEDIUM':    (0.6, 1.2),
+            'TOO_CLOSE': (0.0, 0.4),
+            'CLOSE':     (0.4, 0.7),
+            'MEDIUM':    (0.7, 1.2),
             'FAR':       (1.2, 2.5),
             'TOO_FAR':   (2.5, float('inf')),
         }
@@ -303,7 +303,7 @@ class QLearningWallFollower(Node):
         r_state = s[3]
         band = {
             'MEDIUM': 1.0, 'CLOSE': 0.4, 'FAR': 0.4,
-            'TOO_CLOSE': -0.8, 'TOO_FAR': -0.8
+            'TOO_CLOSE': -1.0, 'TOO_FAR': -0.8
         }[r_state]
 
         is_forward = (self.action_names[a_idx] == 'FORWARD')
@@ -433,12 +433,12 @@ def parse_args(argv):
     p.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
     p.add_argument('--algorithm', type=str, default='q_learning', choices=['q_learning', 'sarsa'])
     p.add_argument('--reward_mode', type=str, default='sparse', choices=['sparse', 'shaped'])
-    p.add_argument('--reset_mode', type=str, default='once', choices=['none', 'once', 'episode'])
-    p.add_argument('--goal_x', type=float, default=2.6)
-    p.add_argument('--goal_y', type=float, default=3.1)
+    p.add_argument('--reset_mode', type=str, default='none', choices=['none', 'once', 'episode'])
+    p.add_argument('--goal_x', type=float, default=-2.5)
+    p.add_argument('--goal_y', type=float, default=-2.5)
     p.add_argument('--goal_r', type=float, default=0.5)
     p.add_argument('--episodes', type=int, default=999999)
-    p.add_argument('--steps_per_episode', type=int, default=1500)
+    p.add_argument('--steps_per_episode', type=int, default=2000)
     p.add_argument('--alpha', type=float, default=0.30)
     p.add_argument('--gamma', type=float, default=0.95)
     p.add_argument('--epsilon', type=float, default=0.30)

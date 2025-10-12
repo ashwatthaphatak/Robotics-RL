@@ -22,8 +22,8 @@ def generate_launch_description():
     mode        = LaunchConfiguration('mode',        default='train')       # train | test
     algorithm   = LaunchConfiguration('algorithm',   default='q_learning')  # q_learning | sarsa
     reward_mode = LaunchConfiguration('reward_mode', default='sparse')      # sparse | shaped
-    goal_x      = LaunchConfiguration('goal_x',      default='2.6')
-    goal_y      = LaunchConfiguration('goal_y',      default='3.1')
+    goal_x      = LaunchConfiguration('goal_x',      default='-2.0')
+    goal_y      = LaunchConfiguration('goal_y',      default='3.25')
     goal_r      = LaunchConfiguration('goal_r',      default='0.5')
 
     declare_args = [
