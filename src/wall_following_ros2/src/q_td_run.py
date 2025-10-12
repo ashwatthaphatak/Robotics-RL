@@ -6,16 +6,14 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist, Point, Quaternion
+from geometry_msgs.msg import Twist, TwistStamped, Point, Quaternion
 from tf2_ros import Buffer, TransformListener
 from ros_gz_interfaces.srv import SetEntityPose
 
-# Candidates for the Gazebo entity name (auto-detect at startup)
 ENTITY_NAME_CANDIDATES = [
     'turtlebot3_burger', 'turtlebot3_burger_0', 'burger', 'turtlebot3'
 ]
 
-# Where to persist learned Q-table and logs
 SAVE_PATH = Path.home() / '.ros' / 'wf_qtable.npy'
 LOG_PATH  = Path.home() / '.ros' / 'wf_train_log.csv'
 
@@ -23,15 +21,14 @@ LOG_PATH  = Path.home() / '.ros' / 'wf_train_log.csv'
 class QLearningWallFollower(Node):
     def __init__(self,
                  mode='train',
-                 algorithm='q_learning',          # q_learning | sarsa
-                 reward_mode='sparse',            # sparse | shaped
+                 algorithm='q_learning',
+                 reward_mode='sparse',
                  goal_x=2.6, goal_y=3.1, goal_r=0.5,
                  episodes=999999, steps_per_episode=1500,
                  alpha=0.3, gamma=0.95,
                  epsilon=0.30, epsilon_decay=0.997, epsilon_min=0.05):
         super().__init__('q_learning_wall_follower')
 
-        # ----- Config -----
         self.mode, self.algorithm = mode, algorithm
         self.reward_mode = reward_mode
         self.goal = (float(goal_x), float(goal_y), float(goal_r))
@@ -41,15 +38,25 @@ class QLearningWallFollower(Node):
         self.epsilon, self.epsilon_decay, self.epsilon_min = float(epsilon), float(epsilon_decay), float(epsilon_min)
 
         # Motion & reward knobs
-        self.collision_thresh = 0.15   # front distance considered collision
-        self.step_penalty = -0.05      # per-step cost (sparse)
-        self.max_linear = 0.28         # cap linear velocity
+        self.collision_thresh = 0.10
+        self.step_penalty = -0.05
+        self.max_linear = 0.28
+
+        # Reward tuning
+        self.collision_penalty = -200.0
+        self.forward_bonus     = 1.0
+        self.spin_penalty      = -15.0
+        self.spin_threshold    = 12
+        self._spin_count       = 0
+        self._last_turn_dir    = 0.0
 
         # ----- State/action space -----
         self.setup_state_action_space()
 
         # ----- Q-table -----
         self.q_table = {s: [0.0, 0.0, 0.0, 0.0] for s in self.all_states}
+        for s in self.all_states:
+            self.q_table[s][ self.action_names.index('FORWARD') ] += 0.5
 
         if self.mode == 'test':
             if not self.try_load_qtable():
@@ -59,18 +66,16 @@ class QLearningWallFollower(Node):
             else:
                 self.get_logger().info(f"[TEST] Loaded learned Q-table from {SAVE_PATH}")
         else:
-            # In TRAIN, try to warm-start if a table exists
             self.try_load_qtable()
 
         # ----- ROS I/O -----
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
         self.cmd_pub  = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub_stamped = self.create_publisher(TwistStamped, '/cmd_vel_stamped', 10)
 
-        # Teleport service (episode reset). If not available, training still runs.
         self.reset_cli = self.create_client(SetEntityPose, '/world/default/set_pose')
         self.reset_cli.wait_for_service(timeout_sec=3.0)
 
-        # TF Buffer for goal check (sparse reward)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -81,23 +86,11 @@ class QLearningWallFollower(Node):
         self.ep_return = 0.0
         self.prev_state = None
         self.prev_action = None
-
-        # Movement “always moves” fix: force first action to random
         self.first_random = True
 
-        # Five scenario regions (adjust if you have specific starts)
-        self.scenarios = [
-            {'x': (-2.5, -1.5), 'y': (-3.5, -2.5), 'yaw': (-math.pi, math.pi)},
-            {'x': (-1.0,  0.0), 'y': (-3.5, -2.5), 'yaw': (-math.pi, math.pi)},
-            {'x': ( 0.5,  1.5), 'y': (-2.0, -1.0), 'yaw': (-math.pi, math.pi)},
-            {'x': ( 1.0,  2.0), 'y': ( 0.0,  1.0), 'yaw': (-math.pi, math.pi)},
-            {'x': (-2.0, -1.0), 'y': ( 1.5,  2.5), 'yaw': (-math.pi, math.pi)},
-        ]
-
-        # Resolve the Gazebo entity name once
+        self.start_pose = {'x': -2.0, 'y': -3.2, 'yaw': 0.0}
         self.entity_name = self.resolve_entity_name()
 
-        # Start training episodes
         if self.training:
             self.start_episode()
 
@@ -118,22 +111,19 @@ class QLearningWallFollower(Node):
             'TOO_FAR':   (2.5, float('inf')),
         }
 
-        # LiDAR sectors (deg)
         self.L_SECTOR  = (80, 100)
         self.F_SECTOR  = (355, 5)
         self.RF_SECTOR = (310, 320)
         self.R_SECTOR  = (260, 280)
 
-        # ACTIONS — ensure FORWARD moves (movement fix #1)
         self.actions = {
-            'FORWARD': (0.25, 0.0),     # > 0.0 linear speed
+            'FORWARD': (0.25, 0.0),
             'LEFT':    (0.22, 0.785),
             'RIGHT':   (0.22, -0.785),
             'STOP':    (0.0, 0.0)
         }
         self.action_names = list(self.actions.keys())
 
-        # Precompute all states
         self.all_states = []
         for l in self.L_STATES:
             for f in self.F_STATES:
@@ -178,19 +168,28 @@ class QLearningWallFollower(Node):
             return False
 
     def teleport(self, x: float, y: float, yaw: float):
-        # Movement fix #3: skip teleport cleanly if no entity resolved
-        if not self.entity_name:
-            self.get_logger().warn("No valid entity for teleport — skipping episode reset.")
+        if not self.reset_cli.service_is_ready():
+            self.get_logger().warn("Teleport skipped: service not ready.")
             return
+        if not self.entity_name or (self.ep % 50 == 0):
+            self.entity_name = self.resolve_entity_name()
+            if not self.entity_name:
+                self.get_logger().warn("Teleport skipped: no valid entity found.")
+                return
         try:
             req = SetEntityPose.Request()
             req.entity.name = self.entity_name
-            req.pose.position = Point(x=float(x), y=float(y), z=0.02)
+            req.pose.position = Point(x=float(x), y=float(y), z=0.05)
             qz, qw = math.sin(yaw / 2.0), math.cos(yaw / 2.0)
             req.pose.orientation = Quaternion(x=0.0, y=0.0, z=qz, w=qw)
-            self.reset_cli.call_async(req)
-        except Exception:
-            pass
+            fut = self.reset_cli.call_async(req)
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=2.0)
+            time.sleep(1.5)
+            self.execute('FORWARD')
+            time.sleep(0.5)
+        except Exception as e:
+            self.get_logger().warn(f"Teleport exception: {e}")
+            time.sleep(2.0)
 
     # ====================== State / Action utils ======================
     def get_sector_avg(self, ranges, a_deg, b_deg):
@@ -234,10 +233,16 @@ class QLearningWallFollower(Node):
 
     def execute(self, name: str):
         lin, ang = self.actions[name]
+        # Publish Twist
         tw = Twist()
-        tw.linear.x  = float(max(min(lin, self.max_linear), -self.max_linear))
+        tw.linear.x = float(max(min(lin, self.max_linear), -self.max_linear))
         tw.angular.z = float(ang)
         self.cmd_pub.publish(tw)
+        # Publish TwistStamped
+        tws = TwistStamped()
+        tws.header.stamp = self.get_clock().now().to_msg()
+        tws.twist = tw
+        self.cmd_pub_stamped.publish(tws)    
 
     def at_goal(self) -> bool:
         if self.reward_mode != 'sparse':
@@ -264,16 +269,39 @@ class QLearningWallFollower(Node):
         # Collision penalty
         front = dists[1] if not math.isinf(dists[1]) else 10.0
         if front < self.collision_thresh or s[1] == 'TOO_CLOSE':
-            return -100.0
+            return self.collision_penalty
 
         if self.reward_mode == 'sparse':
             return self.step_penalty  # only step cost; success handled separately
 
         # shaped reward (optional mode)
         r_state = s[3]
-        band = {'MEDIUM': 1.0, 'CLOSE': 0.4, 'FAR': 0.4, 'TOO_CLOSE': -0.8, 'TOO_FAR': -0.8}[r_state]
-        progress = 0.6 if self.action_names[a_idx] == 'FORWARD' else 0.1
-        return band + progress + (-0.15)
+        band = {
+            'MEDIUM': 1.0, 'CLOSE': 0.4, 'FAR': 0.4,
+            'TOO_CLOSE': -0.8, 'TOO_FAR': -0.8
+        }[r_state]
+
+        # Favor FORWARD more
+        is_forward = (self.action_names[a_idx] == 'FORWARD')
+        progress = 0.6 + (self.forward_bonus if is_forward else 0.0)
+
+        # Anti-spin heuristic: penalize long, continuous turning
+        ang = self.actions[self.action_names[a_idx]][1]
+        if abs(ang) > 0.6:
+            dir_sign = math.copysign(1, ang)
+            if dir_sign == self._last_turn_dir:
+                self._spin_count += 1
+            else:
+                self._spin_count = 1
+            self._last_turn_dir = dir_sign
+        else:
+            self._spin_count = 0
+            self._last_turn_dir = 0.0
+
+        spin_term = self.spin_penalty if self._spin_count > self.spin_threshold else 0.0
+
+        # Use the tunable step_penalty instead of hardcoded -0.15
+        return band + progress + self.step_penalty + spin_term
 
     def td_update(self, s, a, r, s2, a2=None):
         q = self.q_table[s]
@@ -290,23 +318,19 @@ class QLearningWallFollower(Node):
         self.ep_return = 0.0
         self.prev_state = None
         self.prev_action = None
-        self.first_random = True  # movement fix #2: ensure first action is random
+        self.first_random = True  # ensure the first move is not stuck
 
-        # Pick scenario i and teleport (skip cleanly if no entity)
-        i = (self.ep - 1) % len(self.scenarios)
-        box = self.scenarios[i]
-        x = np.random.uniform(*box['x'])
-        y = np.random.uniform(*box['y'])
-        yaw = np.random.uniform(*box['yaw'])
+        x = self.start_pose['x']
+        y = self.start_pose['y']
+        yaw = self.start_pose['yaw']
         self.teleport(x, y, yaw)
-
-        # Let Gazebo settle and nudge forward once (movement fix #3)
-        time.sleep(1.0)
-        self.execute('FORWARD')
 
         # Decay epsilon each episode (keeps exploration for coverage)
         self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
-        self.get_logger().info(f"[TRAIN] Episode {self.ep} start | ε={self.epsilon:.3f}")
+        self.get_logger().info(
+            f"[TRAIN] Episode {self.ep} start | Start=({x:.2f},{y:.2f},{yaw:.2f}) "
+            f"| Goal=({self.goal[0]:.2f},{self.goal[1]:.2f}) | ε={self.epsilon:.3f}"
+        )
 
     def end_episode(self, reason='timeout'):
         self.get_logger().info(f"[TRAIN] Ep{self.ep} end | steps={self.step} return={self.ep_return:.1f} | {reason}")
@@ -342,10 +366,14 @@ class QLearningWallFollower(Node):
         # Goal reached in sparse mode -> success
         if self.reward_mode == 'sparse' and self.at_goal():
             self.ep_return += 1000.0
+            self.get_logger().info(
+                f"[SUCCESS] Goal reached! Total Return={self.ep_return:.1f} "
+                f"| Goal=({self.goal[0]:.2f},{self.goal[1]:.2f})"
+            )
             self.end_episode('success')
             return
 
-        # Movement fix #2: force the very first action to random so the bot moves
+        # Movement fix: force the very first action to random so the bot moves
         if self.first_random:
             a = np.random.randint(len(self.action_names))
             self.first_random = False
@@ -371,7 +399,7 @@ class QLearningWallFollower(Node):
         self.step += 1
 
         # Episode termination conditions
-        if r <= -100.0:
+        if r <= self.collision_penalty:
             self.end_episode('collision')
             return
         if self.step >= self.steps_per_episode:
