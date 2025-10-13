@@ -190,6 +190,12 @@ class QLearningWallFollower(Node):
         self.left_open      = 0.90
         self.min_consec     = 3
 
+        # ---- STUCK watchdog params ----
+        self.stuck_timeout_s = 5.0      # seconds stationary before reset
+        self.stuck_pos_eps   = 0.03     # meters movement to count as progress
+        self._stuck_ref_pose = None     # (x, y)
+        self._last_move_time = None     # wall time in ROS clock seconds
+
         # ---- Discretization & actions ----
         self.setup_state_action_space()
 
@@ -209,7 +215,7 @@ class QLearningWallFollower(Node):
         self.cmd_pub  = self.create_publisher(Twist, '/cmd_vel', 10)
         self.cmd_pub_stamped = self.create_publisher(TwistStamped, '/cmd_vel_stamped', 10)
 
-        # Odometry for yaw during macro-turns
+        # Odometry for yaw during macro-turns & stuck detection
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_cb, 20)
         self._last_odom = None
 
@@ -217,7 +223,7 @@ class QLearningWallFollower(Node):
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Optional Gazebo reset service (only used if reset_mode != 'none')
+        # Optional Gazebo reset service (only used if reset_mode != 'none'… unless forced)
         self.reset_cli = self.create_client(SetEntityPose, '/world/default/set_pose')
         self.reset_cli.wait_for_service(timeout_sec=3.0)
 
@@ -255,6 +261,9 @@ class QLearningWallFollower(Node):
         # Kickstart nudge to help Gazebo get going (tiny, harmless)
         self.kickstart_nudge()
 
+        # Init stuck timer
+        self._last_move_time = self.now_sec()
+
         # Begin training
         if self.training:
             self.start_episode()
@@ -263,7 +272,10 @@ class QLearningWallFollower(Node):
             f"RL ready | mode={self.mode} | algo={self.algorithm} | reward={self.reward_mode} | reset_mode={self.reset_mode}"
         )
 
-    # ====================== Odometry ======================
+    # ====================== Time / Odom helpers ======================
+    def now_sec(self) -> float:
+        return float(self.get_clock().now().nanoseconds) * 1e-9
+
     def odom_cb(self, msg: Odometry):
         self._last_odom = msg
 
@@ -271,6 +283,12 @@ class QLearningWallFollower(Node):
         if self._last_odom is None:
             return 0.0
         return quat_to_yaw(self._last_odom.pose.pose.orientation)
+
+    def current_xy(self):
+        if self._last_odom is None:
+            return None
+        p = self._last_odom.pose.pose.position
+        return (float(p.x), float(p.y))
 
     # ====================== Setup helpers ======================
     def setup_state_action_space(self):
@@ -297,7 +315,7 @@ class QLearningWallFollower(Node):
 
         # Discrete actions
         self.actions = {
-            'FORWARD': (0.30, 0.0),
+            'FORWARD': (0.50, 0.0),
             'LEFT':    (0.22, 0.985),
             'RIGHT':   (0.22, -0.985),
             'STOP':    (0.0, 0.0)
@@ -348,15 +366,15 @@ class QLearningWallFollower(Node):
         except Exception:
             return False
 
-    def teleport(self, x: float, y: float, yaw: float):
-        """Synchronous, safe teleport (used only if reset_mode != 'none')."""
-        if self.reset_mode == 'none':
+    def teleport(self, x: float, y: float, yaw: float, force: bool = False):
+        """Synchronous, safe teleport. If force=True, ignore reset_mode and try anyway."""
+        if (not force) and self.reset_mode == 'none':
             return
         if not self.reset_cli.service_is_ready():
             self.get_logger().warning("Teleport skipped: service not ready.")
             return
 
-        # Re-resolve entity periodically
+        # Re-resolve entity periodically or if unknown
         if not self.entity_name or (self.ep % 50 == 0):
             self.entity_name = self.resolve_entity_name()
             if not self.entity_name:
@@ -521,6 +539,10 @@ class QLearningWallFollower(Node):
         # Decay epsilon each episode
         self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
 
+        # Reset stuck timers per episode
+        self._stuck_ref_pose = None
+        self._last_move_time = self.now_sec()
+
         self.get_logger().info(
             f"[TRAIN] Episode {self.ep} start | ε={self.epsilon:.3f} | reset_mode={self.reset_mode}"
         )
@@ -545,6 +567,49 @@ class QLearningWallFollower(Node):
         else:
             self.execute('STOP')
 
+    # ====================== STUCK detection ======================
+    def _stuck_check_and_handle(self) -> bool:
+        """
+        Returns True if a stuck reset was performed (and episode ended).
+        """
+        # If turning in place, don't consider stuck; refresh timer.
+        if self.turn_ctrl.active:
+            self._stuck_ref_pose = self.current_xy() or self._stuck_ref_pose
+            self._last_move_time = self.now_sec()
+            return False
+
+        cur = self.current_xy()
+        if cur is None:
+            return False  # no odom yet
+
+        now = self.now_sec()
+        if self._stuck_ref_pose is None:
+            self._stuck_ref_pose = cur
+            self._last_move_time = now
+            return False
+
+        dx = cur[0] - self._stuck_ref_pose[0]
+        dy = cur[1] - self._stuck_ref_pose[1]
+        dist = math.hypot(dx, dy)
+
+        if dist > self.stuck_pos_eps:
+            # Progress made -> reset timer/anchor
+            self._stuck_ref_pose = cur
+            self._last_move_time = now
+            return False
+
+        # No progress; check timeout
+        if (now - self._last_move_time) >= self.stuck_timeout_s:
+            self.get_logger().warn(f"[STUCK] No XY progress > {self.stuck_timeout_s:.1f}s "
+                                   f"(≈{dist:.3f}m). Teleporting to start and ending episode.")
+            # Force teleport even if reset_mode == 'none'
+            p = self.start_pose
+            self.teleport(p['x'], p['y'], p['yaw'], force=True)
+            self.end_episode('stuck')
+            return True
+
+        return False
+
     # ====================== Main callback ======================
     def scan_cb(self, msg: LaserScan):
         # Update discrete state & raw distances
@@ -552,13 +617,17 @@ class QLearningWallFollower(Node):
         L, F, RF, R = d
         self.left_d, self.front_d, self.right_d = L, F, R
 
-        # 1) If we are mid-turn, keep turning regardless of new observations
+        # If we are mid-turn, keep turning regardless of new observations
         tcmd = self.turn_ctrl.step()
         if tcmd is not None:
             self.publish_twist(tcmd)
             return
 
-        # 2) Let supervisor trigger left/UTurn if needed (works in train & test)
+        # STUCK watchdog (only when not turning)
+        if self._stuck_check_and_handle():
+            return  # episode already ended & restarted
+
+        # Let supervisor trigger left/UTurn if needed (works in train & test)
         f, l, r = self.supervisor.update(L, F, R)
         event = self.supervisor.maybe_turn(f, l, r, self.turn_ctrl,
                                            front_block=self.front_block,
@@ -570,10 +639,9 @@ class QLearningWallFollower(Node):
             self.publish_twist(stop)
             return
 
-        # 3) TEST mode: greedy execution only
+        # TEST path (kept for completeness)
         if not self.training:
             a = int(np.argmax(self.q_table[s]))
-            # sticky repeat for small turns (optional)
             if self.sticky_steps_left > 0 and self.last_action_idx is not None:
                 a = self.last_action_idx
                 self.sticky_steps_left -= 1
@@ -584,8 +652,7 @@ class QLearningWallFollower(Node):
             self.execute(self.action_names[a])
             return
 
-        # 4) TRAIN mode
-        # Select action (with optional sticky)
+        # TRAIN path
         if self.first_random:
             a = np.random.randint(len(self.action_names))
             self.first_random = False
@@ -679,4 +746,3 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
-
