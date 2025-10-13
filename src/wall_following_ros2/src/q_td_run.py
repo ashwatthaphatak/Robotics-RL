@@ -9,6 +9,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist, TwistStamped, Point, Quaternion
 from tf2_ros import Buffer, TransformListener
 from ros_gz_interfaces.srv import SetEntityPose
+from nav_msgs.msg import Odometry
 
 # -------- Persistence --------
 SAVE_PATH = Path.home() / '.ros' / 'wf_qtable.npy'
@@ -21,6 +22,121 @@ ENTITY_NAME_CANDIDATES = [
     'burger',
     'turtlebot3'
 ]
+
+# ====================== Helpers: yaw + smoothing ======================
+
+def quat_to_yaw(q: Quaternion) -> float:
+    """Convert quaternion to yaw (radians in [-pi, pi])."""
+    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+class EMA:
+    def __init__(self, alpha=0.3, init=None):
+        self.alpha = alpha
+        self.s = init
+    def update(self, x):
+        self.s = x if self.s is None else self.alpha * x + (1 - self.alpha) * self.s
+        return self.s
+
+# ====================== Turn controller (macro-action) ======================
+class TurnController:
+    """
+    Commit to a target yaw delta (e.g., +90°, -90°, 180°) with speed ramp-down.
+    Prevents policy from being interrupted by LiDAR updates during the turn.
+    """
+    def __init__(self, yaw_provider, ang_speed=0.7, tol_deg=4.0, min_ticks=8, max_ticks=120):
+        self._yaw = yaw_provider
+        self.base_speed = ang_speed
+        self.tol = math.radians(tol_deg)
+        self.min_ticks = min_ticks
+        self.max_ticks = max_ticks
+        self.active = False
+        self._target = None
+        self._ticks = 0
+
+    @staticmethod
+    def _wrap(a):
+        return math.atan2(math.sin(a), math.cos(a))
+
+    @staticmethod
+    def _ang_err(cur, target):
+        return math.atan2(math.sin(target - cur), math.cos(target - cur))
+
+    def start(self, delta_deg):
+        if self.active:
+            return
+        cur = self._yaw()
+        self._target = self._wrap(cur + math.radians(delta_deg))
+        self._ticks = 0
+        self.active = True
+
+    def cancel(self):
+        self.active = False
+        self._target = None
+        self._ticks = 0
+
+    def step(self):
+        if not self.active:
+            return None
+        self._ticks += 1
+        cur = self._yaw()
+        err = self._ang_err(cur, self._target)
+        at_goal = abs(err) < self.tol and self._ticks >= self.min_ticks
+        timeout = self._ticks >= self.max_ticks
+
+        stop = Twist(); stop.linear.x = 0.0; stop.angular.z = 0.0
+        if at_goal or timeout:
+            self.cancel()
+            return stop
+
+        k = max(0.25, min(1.0, abs(err) / (math.pi / 4)))  # ramp down near target
+        cmd = Twist()
+        cmd.linear.x = 0.0
+        cmd.angular.z = self.base_speed * k * (1.0 if err > 0 else -1.0)
+        return cmd
+
+# ====================== Supervisor (left/UTurn triggers) ======================
+class JunctionSupervisor:
+    """
+    Debounced triggers for left-90 at T/corners and 180° at dead-ends,
+    while normal motion follows the right wall.
+    """
+    def __init__(self, min_consec=3):
+        self.front_ema = EMA(0.3)
+        self.left_ema  = EMA(0.3)
+        self.right_ema = EMA(0.3)
+        self._open_left_count = 0
+        self._dead_end_count  = 0
+        self._min_consec = min_consec
+
+    def update(self, L, F, R):
+        f = self.front_ema.update(F)
+        l = self.left_ema.update(L)
+        r = self.right_ema.update(R)
+        return f, l, r
+
+    def maybe_turn(self, f, l, r, turn_ctrl: TurnController,
+                   front_block=0.45, side_block=0.40, left_open=0.9):
+        if f < front_block and l > left_open:
+            self._open_left_count += 1
+        else:
+            self._open_left_count = 0
+
+        if f < front_block and l < side_block and r < side_block:
+            self._dead_end_count += 1
+        else:
+            self._dead_end_count = 0
+
+        if not turn_ctrl.active:
+            if self._dead_end_count >= self._min_consec:
+                turn_ctrl.start(180.0)
+                return 'u_turn'
+            if self._open_left_count >= self._min_consec:
+                turn_ctrl.start(90.0)
+                return 'left_90'
+        return None
+
 
 class QLearningWallFollower(Node):
     def __init__(self,
@@ -51,9 +167,9 @@ class QLearningWallFollower(Node):
         self.epsilon_min   = float(epsilon_min)
 
         # ---- Motion & reward knobs ----
-        self.collision_thresh = 0.10   # Laser front threshold for collision
-        self.max_linear       = 0.28   # velocity cap
-        self.step_penalty     = -0.05  # used in both sparse & shaped
+        self.collision_thresh = 0.10
+        self.max_linear       = 0.28
+        self.step_penalty     = -0.05
         self.collision_penalty = -200.0
         self.forward_bonus     = 1.5
         self.spin_penalty      = -20.0
@@ -61,30 +177,39 @@ class QLearningWallFollower(Node):
         self._spin_count       = 0
         self._last_turn_dir    = 0.0
 
+        # ---- Macro-turn & supervisor params ----
+        self.turn_ang_speed = 0.7
+        self.turn_tol_deg   = 4.0
+        self.front_block    = 0.45
+        self.side_block     = 0.40
+        self.left_open      = 0.90
+        self.min_consec     = 3
+
         # ---- Discretization & actions ----
         self.setup_state_action_space()
 
         # ---- Q-table ----
         self.q_table = {s:[0.0, 0.0, 0.0, 0.0] for s in self.all_states}
-        # Forward bias so early exploration prefers moving
         self.q_table_forward_idx = self.action_names.index('FORWARD')
         for s in self.all_states:
             self.q_table[s][self.q_table_forward_idx] += 0.5
 
-        # Try warm-start
         self.try_load_qtable()
 
         # ---- ROS I/O ----
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
-        # Dual-topic publishers to satisfy either bridge variant
         self.cmd_pub  = self.create_publisher(Twist, '/cmd_vel', 10)
         self.cmd_pub_stamped = self.create_publisher(TwistStamped, '/cmd_vel_stamped', 10)
 
-        # TF for optional goal checks (kept available)
+        # Odometry for macro-turns
+        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_cb, 20)
+        self._last_odom = None
+
+        # TF kept available
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Optional Gazebo reset service (only used if reset_mode != 'none')
+        # Optional Gazebo reset service (not typically used in test)
         self.reset_cli = self.create_client(SetEntityPose, '/world/default/set_pose')
         self.reset_cli.wait_for_service(timeout_sec=3.0)
 
@@ -97,24 +222,46 @@ class QLearningWallFollower(Node):
         self.prev_action  = None
         self.first_random = True
 
-        # Start pose (used when reset_mode != 'none')
+        # Sticky actions in TEST to let tiny turns complete
+        self.sticky_steps_left = 0
+        self.last_action_idx   = None
+
+        # Start pose (if you ever use reset in test)
         self.start_pose = {'x': -2.0, 'y': -3.2, 'yaw': 0.0}
 
-        # Try to resolve the Gazebo entity name (used only if we actually reset)
+        # Turn controller + supervisor
+        self.turn_ctrl = TurnController(self.current_yaw,
+                                        ang_speed=self.turn_ang_speed,
+                                        tol_deg=self.turn_tol_deg,
+                                        min_ticks=8, max_ticks=120)
+        self.supervisor = JunctionSupervisor(min_consec=self.min_consec)
+
+        # Cached distances
+        self.left_d = self.front_d = self.right_d = float('inf')
+
+        # Entity resolve (rarely needed in test)
         self.entity_name = None
         if self.reset_mode in ('once', 'episode'):
             self.entity_name = self.resolve_entity_name()
 
-        # Kickstart nudge to help Gazebo get going (tiny, harmless)
+        # Nudge
         self.kickstart_nudge()
 
-        # Begin training
         if self.training:
             self.start_episode()
 
         self.get_logger().info(
             f"RL ready | mode={self.mode} | algo={self.algorithm} | reward={self.reward_mode} | reset_mode={self.reset_mode}"
         )
+
+    # ====================== Odometry ======================
+    def odom_cb(self, msg: Odometry):
+        self._last_odom = msg
+
+    def current_yaw(self) -> float:
+        if self._last_odom is None:
+            return 0.0
+        return quat_to_yaw(self._last_odom.pose.pose.orientation)
 
     # ====================== Setup helpers ======================
     def setup_state_action_space(self):
@@ -165,19 +312,19 @@ class QLearningWallFollower(Node):
                     self.get_logger().info(f"[Q] Warm-start from {SAVE_PATH}")
                     return True
             except Exception as e:
-                self.get_logger().warn(f"[Q] Failed to load table: {e}")
+                self.get_logger().warning(f"[Q] Failed to load table: {e}")
         return False
 
     # ====================== Gazebo reset helpers (optional) ======================
     def resolve_entity_name(self):
         if not self.reset_cli.service_is_ready():
-            self.get_logger().warn("SetEntityPose service not ready; resets may be skipped.")
+            self.get_logger().warning("SetEntityPose service not ready; resets may be skipped.")
             return None
         for cand in ENTITY_NAME_CANDIDATES:
             if self.try_set_pose_probe(cand):
                 self.get_logger().info(f"[RESET] Using Gazebo entity: {cand}")
                 return cand
-        self.get_logger().warn("[RESET] Could not resolve entity; resets disabled.")
+        self.get_logger().warning("[RESET] Could not resolve entity; resets disabled.")
         return None
 
     def try_set_pose_probe(self, name: str) -> bool:
@@ -193,18 +340,16 @@ class QLearningWallFollower(Node):
             return False
 
     def teleport(self, x: float, y: float, yaw: float):
-        """Synchronous, safe teleport (used only if reset_mode != 'none')."""
         if self.reset_mode == 'none':
             return
         if not self.reset_cli.service_is_ready():
-            self.get_logger().warn("Teleport skipped: service not ready.")
+            self.get_logger().warning("Teleport skipped: service not ready.")
             return
 
-        # Re-resolve entity periodically
         if not self.entity_name or (self.ep % 50 == 0):
             self.entity_name = self.resolve_entity_name()
             if not self.entity_name:
-                self.get_logger().warn("Teleport skipped: no valid entity.")
+                self.get_logger().warning("Teleport skipped: no valid entity.")
                 return
         try:
             req = SetEntityPose.Request()
@@ -214,9 +359,9 @@ class QLearningWallFollower(Node):
             req.pose.orientation = Quaternion(x=0.0, y=0.0, z=qz, w=qw)
             fut = self.reset_cli.call_async(req)
             rclpy.spin_until_future_complete(self, fut, timeout_sec=2.0)
-            time.sleep(1.0)  # settle
+            time.sleep(1.0)
         except Exception as e:
-            self.get_logger().warn(f"Teleport exception: {e}")
+            self.get_logger().warning(f"Teleport exception: {e}")
 
     # ====================== LiDAR / state helpers ======================
     def get_sector_avg(self, ranges, a_deg, b_deg):
@@ -245,11 +390,11 @@ class QLearningWallFollower(Node):
                 return s
         return 'TOO_FAR' if t == 'right' else 'FAR'
 
-    def determine_state(self, scan):
-        L  = self.get_sector_avg(scan, *self.L_SECTOR)
-        F  = self.get_sector_avg(scan, *self.F_SECTOR)
-        RF = self.get_sector_avg(scan, *self.RF_SECTOR)
-        R  = self.get_sector_avg(scan, *self.R_SECTOR)
+    def determine_state(self, ranges):
+        L  = self.get_sector_avg(ranges, *self.L_SECTOR)
+        F  = self.get_sector_avg(ranges, *self.F_SECTOR)
+        RF = self.get_sector_avg(ranges, *self.RF_SECTOR)
+        R  = self.get_sector_avg(ranges, *self.R_SECTOR)
         s = (
             self.dist_to_state(L, 'left'),
             self.dist_to_state(F, 'front'),
@@ -264,24 +409,20 @@ class QLearningWallFollower(Node):
         tw = Twist()
         tw.linear.x  = float(max(min(lin, self.max_linear), -self.max_linear))
         tw.angular.z = float(ang)
-        self.cmd_pub.publish(tw)
+        self.publish_twist(tw)
 
+    def publish_twist(self, tw: Twist):
+        self.cmd_pub.publish(tw)
         tws = TwistStamped()
         tws.header.stamp = self.get_clock().now().to_msg()
         tws.twist = tw
         self.cmd_pub_stamped.publish(tws)
 
     def kickstart_nudge(self):
-        """Send a couple of small forward commands to ensure Gazebo starts moving."""
         try:
-            tw = Twist()
-            tw.linear.x = 0.12; tw.angular.z = 0.0
+            tw = Twist(); tw.linear.x = 0.12; tw.angular.z = 0.0
             for _ in range(2):
-                self.cmd_pub.publish(tw)
-                tws = TwistStamped()
-                tws.header.stamp = self.get_clock().now().to_msg()
-                tws.twist = tw
-                self.cmd_pub_stamped.publish(tws)
+                self.publish_twist(tw)
                 time.sleep(0.15)
         except Exception:
             pass
@@ -293,7 +434,6 @@ class QLearningWallFollower(Node):
         return int(np.argmax(self.q_table[s]))
 
     def reward(self, dists, s, a_idx):
-        # Collision check
         front = dists[1] if not math.isinf(dists[1]) else 10.0
         if front < self.collision_thresh or s[1] == 'TOO_CLOSE':
             return self.collision_penalty
@@ -301,7 +441,6 @@ class QLearningWallFollower(Node):
         if self.reward_mode == 'sparse':
             return self.step_penalty
 
-        # Shaped reward
         r_state = s[3]
         band = {
             'MEDIUM': 1.0, 'CLOSE': 0.4, 'FAR': 0.4,
@@ -311,7 +450,6 @@ class QLearningWallFollower(Node):
         is_forward = (self.action_names[a_idx] == 'FORWARD')
         progress = 0.6 + (self.forward_bonus if is_forward else 0.0)
 
-        # Anti-spin
         ang = self.actions[self.action_names[a_idx]][1]
         if abs(ang) > 0.6:
             dir_sign = math.copysign(1, ang)
@@ -336,7 +474,7 @@ class QLearningWallFollower(Node):
             target = r + self.gamma * max(self.q_table[s2])
         q[a] += self.alpha * (target - q[a])
 
-    # ====================== Episodes ======================
+    # ====================== Episodes (kept for symmetry) ======================
     def start_episode(self):
         self.ep += 1
         self.step = 0
@@ -344,22 +482,22 @@ class QLearningWallFollower(Node):
         self.prev_state = None
         self.prev_action = None
         self.first_random = True
+        self.sticky_steps_left = 0
+        self.last_action_idx = None
 
-        # Optional reset policy
         if self.reset_mode == 'episode' or (self.reset_mode == 'once' and self.ep == 1):
             p = self.start_pose
             self.teleport(p['x'], p['y'], p['yaw'])
 
-        # Decay epsilon each episode
         self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
 
         self.get_logger().info(
-            f"[TRAIN] Episode {self.ep} start | ε={self.epsilon:.3f} | reset_mode={self.reset_mode}"
+            f"[TEST] Episode {self.ep} start | ε={self.epsilon:.3f} | reset_mode={self.reset_mode}"
         )
 
     def end_episode(self, reason='timeout'):
         self.get_logger().info(
-            f"[TRAIN] Ep{self.ep} end | steps={self.step} return={self.ep_return:.1f} | {reason}"
+            f"[TEST] Ep{self.ep} end | steps={self.step} return={self.ep_return:.1f} | {reason}"
         )
         try:
             np.save(SAVE_PATH, self.q_table)
@@ -380,51 +518,64 @@ class QLearningWallFollower(Node):
     # ====================== Main callback ======================
     def scan_cb(self, msg: LaserScan):
         s, d = self.determine_state(msg.ranges)
+        L, F, RF, R = d
+        self.left_d, self.front_d, self.right_d = L, F, R
 
-        # TEST mode: greedy execution only
+        # 1) If we are mid-turn, keep turning regardless of new observations
+        tcmd = self.turn_ctrl.step()
+        if tcmd is not None:
+            self.publish_twist(tcmd)
+            return
+
+        # 2) Let supervisor trigger left/UTurn if needed
+        f, l, r = self.supervisor.update(L, F, R)
+        event = self.supervisor.maybe_turn(f, l, r, self.turn_ctrl,
+                                           front_block=self.front_block,
+                                           side_block=self.side_block,
+                                           left_open=self.left_open)
+        if event is not None:
+            stop = Twist(); stop.linear.x = 0.0; stop.angular.z = 0.0
+            self.publish_twist(stop)
+            return
+
+        # 3) TEST mode: greedy with optional sticky for small turns
         if not self.training:
             a = int(np.argmax(self.q_table[s]))
+            if self.sticky_steps_left > 0 and self.last_action_idx is not None:
+                a = self.last_action_idx
+                self.sticky_steps_left -= 1
+            else:
+                if self.action_names[a] in ('LEFT', 'RIGHT'):
+                    self.sticky_steps_left = 6
+                    self.last_action_idx = a
             self.execute(self.action_names[a])
             return
 
-        # TRAIN mode:
-        # Select action
+        # (Training path retained for completeness, though mode='test')
         if self.first_random:
             a = np.random.randint(len(self.action_names))
             self.first_random = False
         else:
             a = self.eps_greedy(s)
-
-        # Execute
         self.execute(self.action_names[a])
-
-        # Reward + TD
         r = self.reward(d, s, a)
         self.ep_return += r
-
         if self.prev_state is not None and self.prev_action is not None:
             if self.algorithm == 'sarsa':
                 a_next = self.eps_greedy(s)
                 self.td_update(self.prev_state, self.prev_action, r, s, a2=a_next)
             else:
                 self.td_update(self.prev_state, self.prev_action, r, s)
-
         self.prev_state, self.prev_action = s, a
         self.step += 1
-
-        # Termination
         if r <= self.collision_penalty:
-            self.end_episode('collision')
-            return
+            self.end_episode('collision'); return
         if self.step >= self.steps_per_episode:
-            self.end_episode('timeout')
-            return
-
-        # Autosave
+            self.end_episode('timeout'); return
         if self.step % 500 == 0:
             try:
                 np.save(SAVE_PATH, self.q_table)
-                self.get_logger().info(f"[TRAIN] autosave at step {self.step}, return={self.ep_return:.1f}")
+                self.get_logger().info(f"[TEST] autosave at step {self.step}, return={self.ep_return:.1f}")
             except Exception:
                 pass
 
@@ -432,14 +583,14 @@ class QLearningWallFollower(Node):
 # ====================== CLI / Main ======================
 def parse_args(argv):
     p = argparse.ArgumentParser()
-    p.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
+    p.add_argument('--mode', type=str, default='test', choices=['train', 'test'])
     p.add_argument('--algorithm', type=str, default='q_learning', choices=['q_learning', 'sarsa'])
     p.add_argument('--reward_mode', type=str, default='sparse', choices=['sparse', 'shaped'])
     p.add_argument('--reset_mode', type=str, default='none', choices=['none', 'once', 'episode'])
-    p.add_argument('--goal_x', type=float, default=-2.5)
-    p.add_argument('--goal_y', type=float, default=-2.5)
+    p.add_argument('--goal_x', type=float, default=2.6)
+    p.add_argument('--goal_y', type=float, default=3.1)
     p.add_argument('--goal_r', type=float, default=0.5)
-    p.add_argument('--episodes', type=int, default=999999)
+    p.add_argument('--episodes', type=int, default=1)
     p.add_argument('--steps_per_episode', type=int, default=2000)
     p.add_argument('--alpha', type=float, default=0.30)
     p.add_argument('--gamma', type=float, default=0.95)
@@ -475,3 +626,4 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
