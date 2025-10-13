@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable, ExecuteProcess
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    AppendEnvironmentVariable,
+    ExecuteProcess,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -16,22 +22,33 @@ def generate_launch_description():
     algo = LaunchConfiguration('algorithm')
     reward = LaunchConfiguration('reward_mode')
     reset = LaunchConfiguration('reset_mode')
+    gui = LaunchConfiguration('gui')
+    rviz_enable = LaunchConfiguration('rviz')
 
     declare_mode = DeclareLaunchArgument(
         'mode', default_value='train',
-        description='Mode: train or test')
-
+        description='Mode: train or test'
+    )
     declare_algorithm = DeclareLaunchArgument(
         'algorithm', default_value='q_learning',
-        description='Algorithm: q_learning or sarsa')
-
+        description='Algorithm: q_learning or sarsa'
+    )
     declare_reward = DeclareLaunchArgument(
         'reward_mode', default_value='shaped',
-        description='Reward mode: shaped or sparse')
-
+        description='Reward mode: shaped or sparse'
+    )
     declare_reset = DeclareLaunchArgument(
         'reset_mode', default_value='once',
-        description='Reset behavior: once, always, or none')
+        description='Reset behavior: once, always, or none'
+    )
+    declare_gui = DeclareLaunchArgument(
+        'gui', default_value='true',
+        description='Enable Gazebo GUI (true/false)'
+    )
+    declare_rviz = DeclareLaunchArgument(
+        'rviz', default_value='true',
+        description='Enable RViz visualization (true/false)'
+    )
 
     # ─────────────────────────────────────────────
     # Path setup
@@ -51,7 +68,7 @@ def generate_launch_description():
     )
 
     # ─────────────────────────────────────────────
-    # Gazebo setup
+    # Gazebo setup (headless supported)
     # ─────────────────────────────────────────────
     gzserver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -62,7 +79,8 @@ def generate_launch_description():
     gzclient = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': '-g -v2'}.items()
+        launch_arguments={'gz_args': '-g -v2'}.items(),
+        condition=IfCondition(gui)  # only launch GUI if gui:=true
     )
 
     robot_state_pub = IncludeLaunchDescription(
@@ -77,6 +95,9 @@ def generate_launch_description():
         launch_arguments={'x_pose': '-2.0', 'y_pose': '-3.25'}.items()
     )
 
+    # Delay spawn to let physics load (prevents invisible bot)
+    delayed_spawn = TimerAction(period=5.0, actions=[spawn_tb3])
+
     set_env_vars = AppendEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
         os.path.join(tb3_gz, 'models')
@@ -86,27 +107,34 @@ def generate_launch_description():
     # ROS–Gazebo bridges + viz
     # ─────────────────────────────────────────────
     bridge_topics = ExecuteProcess(
-        cmd=['ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
-             '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-             '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'],
+        cmd=[
+            'ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
+            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'
+        ],
         output='screen'
     )
 
     bridge_service = ExecuteProcess(
-        cmd=['ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
-             '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'],
+        cmd=[
+            'ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
+            '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'
+        ],
         output='screen'
     )
 
     rviz = ExecuteProcess(
         cmd=['rviz2', '-d', rviz_config],
-        output='screen'
+        output='screen',
+        condition=IfCondition(rviz_enable)
     )
 
     tf_static = ExecuteProcess(
-        cmd=['ros2', 'run', 'tf2_ros', 'static_transform_publisher',
-             '0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        cmd=[
+            'ros2', 'run', 'tf2_ros', 'static_transform_publisher',
+            '0', '0', '0', '0', '0', '0', 'map', 'odom'
+        ],
         output='screen'
     )
 
@@ -151,11 +179,12 @@ def generate_launch_description():
     ld = LaunchDescription()
 
     # Arguments
-    for arg in [declare_mode, declare_algorithm, declare_reward, declare_reset]:
+    for arg in [declare_mode, declare_algorithm, declare_reward,
+                declare_reset, declare_gui, declare_rviz]:
         ld.add_action(arg)
 
     # Core setup
-    for act in [set_env_vars, gzserver, gzclient, spawn_tb3, robot_state_pub]:
+    for act in [set_env_vars, gzserver, gzclient, delayed_spawn, robot_state_pub]:
         ld.add_action(act)
 
     # Bridges & visualization
