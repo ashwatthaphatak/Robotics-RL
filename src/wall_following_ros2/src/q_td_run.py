@@ -32,7 +32,9 @@ class QLearningWallFollower(Node):
                  episodes=999999, steps_per_episode=1500,
                  alpha=0.3, gamma=0.95,
                  epsilon=0.30, epsilon_decay=0.997, epsilon_min=0.05):
-        super().__init__('q_learning_wall_follower')
+        super().__init__('q_td_run')
+        mode = 'test'
+        algorithm = 'q_learning'
 
         # ---- Config ----
         self.mode          = mode

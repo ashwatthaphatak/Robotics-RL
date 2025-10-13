@@ -1,137 +1,169 @@
 #!/usr/bin/env python3
 import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (
-    AppendEnvironmentVariable,
-    IncludeLaunchDescription,
-    DeclareLaunchArgument,
-    ExecuteProcess,
-)
-from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable, ExecuteProcess
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    # ---------------- Launch arguments ----------------
-    use_sim_time = LaunchConfiguration('use_sim_time', default='true')
-    x_pose = LaunchConfiguration('x_pose', default='-2.0')
-    y_pose = LaunchConfiguration('y_pose', default='-3.25')
+    # ─────────────────────────────────────────────
+    # Arguments
+    # ─────────────────────────────────────────────
+    mode = LaunchConfiguration('mode')
+    algo = LaunchConfiguration('algorithm')
+    reward = LaunchConfiguration('reward_mode')
+    reset = LaunchConfiguration('reset_mode')
 
-    mode        = LaunchConfiguration('mode',        default='train')       # train | test
-    algorithm   = LaunchConfiguration('algorithm',   default='q_learning')  # q_learning | sarsa
-    reward_mode = LaunchConfiguration('reward_mode', default='sparse')      # sparse | shaped
-    goal_x      = LaunchConfiguration('goal_x',      default='-2.0')
-    goal_y      = LaunchConfiguration('goal_y',      default='3.25')
-    goal_r      = LaunchConfiguration('goal_r',      default='0.5')
+    declare_mode = DeclareLaunchArgument(
+        'mode', default_value='train',
+        description='Mode: train or test')
 
-    declare_args = [
-        DeclareLaunchArgument('mode',        default_value='train'),
-        DeclareLaunchArgument('algorithm',   default_value='q_learning'),
-        DeclareLaunchArgument('reward_mode', default_value='sparse'),
-        DeclareLaunchArgument('goal_x',      default_value='2.6'),
-        DeclareLaunchArgument('goal_y',      default_value='3.1'),
-        DeclareLaunchArgument('goal_r',      default_value='0.5'),
-    ]
+    declare_algorithm = DeclareLaunchArgument(
+        'algorithm', default_value='q_learning',
+        description='Algorithm: q_learning or sarsa')
 
-    # ---------------- Paths ----------------
-    launch_file_dir = os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'launch')
+    declare_reward = DeclareLaunchArgument(
+        'reward_mode', default_value='shaped',
+        description='Reward mode: shaped or sparse')
+
+    declare_reset = DeclareLaunchArgument(
+        'reset_mode', default_value='once',
+        description='Reset behavior: once, always, or none')
+
+    # ─────────────────────────────────────────────
+    # Path setup
+    # ─────────────────────────────────────────────
+    pkg_share = get_package_share_directory('wall_following_ros2')
+    tb3_gz = get_package_share_directory('turtlebot3_gazebo')
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
-    nav2_bringup_pkg = get_package_share_directory('nav2_bringup')
-    nav2_rviz_config = os.path.join(nav2_bringup_pkg, 'rviz', 'nav2_default_view.rviz')
-    world = os.path.join(get_package_share_directory('wall_following_ros2'), 'worlds', 'largemaze.world')
+    nav2_bringup = get_package_share_directory('nav2_bringup')
 
-    # ---------------- Gazebo + robot ----------------
+    world_path = os.path.join(pkg_share, 'worlds', 'largemaze.world')
+    rviz_config = os.path.join(nav2_bringup, 'rviz', 'nav2_default_view.rviz')
+
+    # 🧭 Path to your source scripts
+    src_dir = os.path.join(
+        os.path.expanduser('~'),
+        'ros2_ws', 'src', 'wall_following_ros2', 'src'
+    )
+
+    # ─────────────────────────────────────────────
+    # Gazebo setup
+    # ─────────────────────────────────────────────
     gzserver = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': ['-r -s -v2 ', world]}.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
+        launch_arguments={'gz_args': f'-r -s -v2 {world_path}'}.items()
     )
 
     gzclient = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': '-g -v2 '}.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
+        launch_arguments={'gz_args': '-g -v2'}.items()
     )
 
     robot_state_pub = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_file_dir, 'robot_state_publisher.launch.py')),
-        launch_arguments={'use_sim_time': use_sim_time}.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(tb3_gz, 'launch', 'robot_state_publisher.launch.py')),
+        launch_arguments={'use_sim_time': 'true'}.items()
     )
 
     spawn_tb3 = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_file_dir, 'spawn_turtlebot3.launch.py')),
-        launch_arguments={'x_pose': x_pose, 'y_pose': y_pose}.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(tb3_gz, 'launch', 'spawn_turtlebot3.launch.py')),
+        launch_arguments={'x_pose': '-2.0', 'y_pose': '-3.25'}.items()
     )
 
-    set_env = AppendEnvironmentVariable(
+    set_env_vars = AppendEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
-        os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'models')
+        os.path.join(tb3_gz, 'models')
     )
 
-    # ---------------- Bridges ----------------
-    gz_topics_bridge = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='gz_topics_bridge',
+    # ─────────────────────────────────────────────
+    # ROS–Gazebo bridges + viz
+    # ─────────────────────────────────────────────
+    bridge_topics = ExecuteProcess(
+        cmd=['ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
+             '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+             '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'],
+        output='screen'
+    )
+
+    bridge_service = ExecuteProcess(
+        cmd=['ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
+             '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'],
+        output='screen'
+    )
+
+    rviz = ExecuteProcess(
+        cmd=['rviz2', '-d', rviz_config],
+        output='screen'
+    )
+
+    tf_static = ExecuteProcess(
+        cmd=['ros2', 'run', 'tf2_ros', 'static_transform_publisher',
+             '0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        output='screen'
+    )
+
+    # ─────────────────────────────────────────────
+    # RL Nodes — executed directly from src/
+    # ─────────────────────────────────────────────
+    q_train = ExecuteProcess(
+        cmd=['python3', os.path.join(src_dir, 'q_td_train.py')],
         output='screen',
-        arguments=[
-            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
-        ],
+        condition=IfCondition(PythonExpression([
+            "'", algo, "' == 'q_learning' and '", mode, "' == 'train'"
+        ]))
     )
 
-    gz_service_bridge = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='gz_service_bridge',
+    q_test = ExecuteProcess(
+        cmd=['python3', os.path.join(src_dir, 'q_td_run.py')],
         output='screen',
-        arguments=[
-            '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'
-        ],
+        condition=IfCondition(PythonExpression([
+            "'", algo, "' == 'q_learning' and '", mode, "' == 'test'"
+        ]))
     )
 
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', nav2_rviz_config],
-        output='screen'
+    sarsa_train = ExecuteProcess(
+        cmd=['python3', os.path.join(src_dir, 'sarsa_train.py')],
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", algo, "' == 'sarsa' and '", mode, "' == 'train'"
+        ]))
     )
 
-    transform = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_map_to_odom',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
-        output='screen'
+    sarsa_test = ExecuteProcess(
+        cmd=['python3', os.path.join(src_dir, 'sarsa_run.py')],
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", algo, "' == 'sarsa' and '", mode, "' == 'test'"
+        ]))
     )
 
-    # ---------------- RL node ----------------
-    wall_follower = ExecuteProcess(
-        cmd=[
-            'python3', '/home/aaphatak/ros2_ws/src/wall_following_ros2/src/q_td_run.py',
-            '--mode', mode,
-            '--algorithm', algorithm,
-            '--reward_mode', reward_mode,
-            '--goal_x', goal_x,
-            '--goal_y', goal_y,
-            '--goal_r', goal_r
-        ],
-        output='screen'
-    )
-
+    # ─────────────────────────────────────────────
+    # Launch Description
+    # ─────────────────────────────────────────────
     ld = LaunchDescription()
-    for a in declare_args:
-        ld.add_action(a)
-    ld.add_action(gzserver)
-    ld.add_action(gzclient)
-    ld.add_action(spawn_tb3)
-    ld.add_action(robot_state_pub)
-    ld.add_action(set_env)
-    ld.add_action(gz_topics_bridge)
-    ld.add_action(gz_service_bridge)
-    ld.add_action(rviz)
-    ld.add_action(transform)
-    ld.add_action(wall_follower)
+
+    # Arguments
+    for arg in [declare_mode, declare_algorithm, declare_reward, declare_reset]:
+        ld.add_action(arg)
+
+    # Core setup
+    for act in [set_env_vars, gzserver, gzclient, spawn_tb3, robot_state_pub]:
+        ld.add_action(act)
+
+    # Bridges & visualization
+    for act in [bridge_topics, bridge_service, rviz, tf_static]:
+        ld.add_action(act)
+
+    # RL scripts
+    for act in [q_train, q_test, sarsa_train, sarsa_test]:
+        ld.add_action(act)
+
     return ld
