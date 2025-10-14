@@ -5,6 +5,7 @@ import numpy as np
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist, TwistStamped, Point, Quaternion
 from tf2_ros import Buffer, TransformListener
@@ -196,6 +197,11 @@ class QLearningWallFollower(Node):
         self._stuck_ref_pose = None     # (x, y)
         self._last_move_time = None     # wall time in ROS clock seconds
 
+        # ---- Goal stopping knobs ----
+        self.stop_on_goal   = True
+        self.goal_reward    = 1000.0
+        self.goal_frames    = ['base_footprint', 'base_link']  # TF frames to try
+
         # ---- Discretization & actions ----
         self.setup_state_action_space()
 
@@ -219,7 +225,7 @@ class QLearningWallFollower(Node):
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_cb, 20)
         self._last_odom = None
 
-        # TF for optional goal checks (kept available)
+        # TF for goal checks
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -289,6 +295,28 @@ class QLearningWallFollower(Node):
             return None
         p = self._last_odom.pose.pose.position
         return (float(p.x), float(p.y))
+
+    # ====================== Goal check ======================
+    def at_goal(self):
+        """Return (bool, dist) — is robot within goal radius? Uses TF, falls back to odom."""
+        gx, gy, gr = self.goal
+        # Try TF first
+        for base in self.goal_frames:
+            try:
+                t = self.tf_buffer.lookup_transform('map', base, Time())
+                x = float(t.transform.translation.x)
+                y = float(t.transform.translation.y)
+                d = math.hypot(x - gx, y - gy)
+                return (d <= gr), d
+            except Exception:
+                continue
+        # Fallback: odom (assuming map≈odom due to static map->odom)
+        if self._last_odom is not None:
+            x = float(self._last_odom.pose.pose.position.x)
+            y = float(self._last_odom.pose.pose.position.y)
+            d = math.hypot(x - gx, y - gy)
+            return (d <= gr), d
+        return (False, float('inf'))
 
     # ====================== Setup helpers ======================
     def setup_state_action_space(self):
@@ -612,6 +640,22 @@ class QLearningWallFollower(Node):
 
     # ====================== Main callback ======================
     def scan_cb(self, msg: LaserScan):
+        # --- Goal check FIRST (prevents any post-goal learning/pollution) ---
+        if self.training and self.stop_on_goal:
+            reached, dist = self.at_goal()
+            if reached:
+                # Optional: one terminal backprop to credit the last (s,a)
+                if self.prev_state is not None and self.prev_action is not None:
+                    # Terminal target = R_goal (no bootstrap)
+                    q = self.q_table[self.prev_state]
+                    q[self.prev_action] += self.alpha * (self.goal_reward - q[self.prev_action])
+                self.ep_return += self.goal_reward
+                # Prevent new episodes after success
+                self.episodes = self.ep
+                self.get_logger().info(f"[SUCCESS] Goal reached (d≈{dist:.2f} m). Stopping training.")
+                self.end_episode('success')
+                return
+
         # Update discrete state & raw distances
         s, d = self.determine_state(msg.ranges)
         L, F, RF, R = d
