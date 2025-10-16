@@ -6,85 +6,75 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist, TwistStamped
 
-SAVE_SARSA = Path.home() / '.ros' / 'wf_sarsa.numpy'   # trained SARSA table
+from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Twist
+
+# -------- Persistence (SARSA only) --------
+SAVE_PATH = Path.home() / '.ros' / 'wf_sarsa.numpy'
 
 def clamp(v, lo, hi): return lo if v < lo else hi if v > hi else v
 
-# ---------- gentle, time-bounded turn controller (no odom/yaw needed) ----------
-class TurnController:
-    def __init__(self, ang_speed=0.35, min_ticks=8, max_ticks=140):
-        self.base_speed = float(ang_speed)
-        self.min_ticks = int(min_ticks)
-        self.max_ticks = int(max_ticks)
-        self.active = False
-        self._dir = 0.0
-        self._ticks = 0
-    def start(self, deg):  # +90, -90, 180
-        if self.active: return
-        self._dir  = 1.0 if deg > 0 else -1.0
-        self._ticks = 0
-        self.active = True
-    def cancel(self): self.active = False; self._dir = 0.0; self._ticks = 0
-    def step(self):
-        if not self.active: return None
-        self._ticks += 1
-        tw = Twist()
-        if self._ticks >= self.max_ticks:
-            self.cancel(); return tw  # stop
-        k = 1.0 if self._ticks < (0.6 * self.max_ticks) else 0.55
-        tw.linear.x = 0.0
-        tw.angular.z = self.base_speed * k * self._dir
-        return tw
-
-# ---------- tiny EMA for junction debounce ----------
-class EMA:
-    def __init__(self, alpha=0.25, init=None):
-        self.alpha = alpha; self.s = init
-    def update(self, x):
-        self.s = x if self.s is None else self.alpha * x + (1 - self.alpha) * self.s
-        return self.s
-
-class JunctionSupervisor:
-    """Left-90 at corners; 180 at dead-ends (debounced)."""
-    def __init__(self, min_consec=2):
-        self.front_ema = EMA(0.25); self.left_ema = EMA(0.25); self.right_ema = EMA(0.25)
-        self._open_left_count = 0; self._dead_end_count = 0; self._min_consec = int(min_consec)
-    def update(self, L, F, R):
-        return self.front_ema.update(F), self.left_ema.update(L), self.right_ema.update(R)
-    def maybe_turn(self, f, l, r, turn_ctrl: TurnController,
-                   front_block=0.40, side_block=0.40, left_open=0.90):
-        # corner: front blocked and left open (we prefer left turns)
-        if f < front_block and l > left_open: self._open_left_count += 1
-        else: self._open_left_count = 0
-        # dead-end: front blocked and both sides blocked
-        if f < front_block and l < side_block and r < side_block: self._dead_end_count += 1
-        else: self._dead_end_count = 0
-        if not turn_ctrl.active:
-            if self._dead_end_count >= self._min_consec:
-                turn_ctrl.start(180.0); return 'u_turn'
-            if self._open_left_count >= self._min_consec:
-                turn_ctrl.start(90.0);  return 'left_90'
-        return None
-
-# ====================== SARSA greedy runner ======================
 class SarsaRun(Node):
-    def __init__(self, max_linear=0.50):
+    """
+    Inference-only runner that follows the right wall using the SARSA Q-table.
+    - No learning, no odom/teleport/TF.
+    - Same action set / discretization as training.
+    - Corner logic forces LEFT; RIGHT only on true right openings.
+    - Linear slowdown near obstacles; angular stays strong for turns.
+    """
+    def __init__(self, max_linear=0.50, debug=False):
         super().__init__('sarsa_run')
 
-        # --- actions (match trainer) ---
+        self.debug = bool(debug)
+
+        # ---- Motion & actions (match training magnitudes) ----
         self.max_linear = float(max_linear)
         self.actions = {
-            'FORWARD': (0.45,  0.0),
-            'LEFT':    (0.22,  0.60),
-            'RIGHT':   (0.22, -0.60),
-            'STOP':    (0.0,   0.0),
+            'FORWARD': (0.45,  0.00),
+            'LEFT':    (0.20,  0.45),
+            'RIGHT':   (0.20, -0.45),
+            'STOP':    (0.00,  0.00),
         }
         self.action_names = list(self.actions.keys())
 
-        # --- lidar discretization (match trainer) ---
+        # ---- LiDAR thresholds ----
+        self.collision_front_thresh = 0.22
+        self.slowdown_front_thresh  = 0.60
+        # earlier corner detection so we commit LEFT in time
+        self.front_block_thresh     = 0.60
+        self.side_detect_thresh     = 2.00
+
+        # ---- Startup push (same idea as training) ----
+        self.startup_forward_sec   = 1.0
+        self._startup_end_walltime = time.time() + self.startup_forward_sec
+
+        # ---- Discretization (must match training) ----
+        self.setup_state_space()
+
+        # ---- Load Q-table (SARSA) ----
+        self.q_table = {s: [0.0, 0.0, 0.0, 0.0] for s in self.all_states}
+        self.try_load_qtable()
+
+        # ---- ROS I/O ----
+        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_cb, qos_profile_sensor_data)
+        self.cmd_pub  = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # ---- Runtime state ----
+        self._sector_min_last   = float('inf')
+        self._have_scan         = False
+        self._last_scan_time    = 0.0
+        self._last_cmd_name     = 'STOP'
+        self.sticky_steps_left  = 0
+        self.sticky_action_idx  = None
+
+        # 20 Hz keep-alive / startup push
+        self.control_timer = self.create_timer(0.05, self.control_tick)
+
+        self.get_logger().info("[RUN] SARSA inference ready.")
+
+    # ====================== Discretization ======================
+    def setup_state_space(self):
         self.L_STATES  = ['CLOSE', 'FAR']
         self.F_STATES  = ['TOO_CLOSE', 'CLOSE', 'MEDIUM', 'FAR']
         self.RF_STATES = ['CLOSE', 'FAR']
@@ -100,14 +90,6 @@ class SarsaRun(Node):
         self.F_SECTOR  = (355, 5)
         self.RF_SECTOR = (310, 320)
         self.R_SECTOR  = (260, 280)
-
-        # thresholds (mirror trainer)
-        self.collision_front_thresh = 0.20
-        self.front_block_thresh     = 0.40
-        self.side_detect_thresh     = 2.00
-        self.right_scrape_thresh    = 0.55  # avoid turning right when already close
-
-        # build state space
         self.all_states = []
         for l in self.L_STATES:
             for f in self.F_STATES:
@@ -115,210 +97,201 @@ class SarsaRun(Node):
                     for r in self.R_STATES:
                         self.all_states.append((l, f, rf, r))
 
-        # --- load SARSA table only ---
-        if not SAVE_SARSA.exists():
-            raise FileNotFoundError(f"No trained SARSA table at {SAVE_SARSA}. Run training first.")
-        with open(SAVE_SARSA, 'rb') as f:
-            data = np.load(f, allow_pickle=True).item()
-        self.q_table = {s:[0.0,0.0,0.0,0.0] for s in self.all_states}
-        if isinstance(data, dict):
-            for k, v in data.items():
-                if k in self.q_table and len(v) == 4:
-                    self.q_table[k] = list(map(float, v))
-        self.get_logger().info(f"[Q] Loaded SARSA policy from {SAVE_SARSA}")
+    # ====================== Q-table I/O ======================
+    def try_load_qtable(self):
+        if not SAVE_PATH.exists():
+            self.get_logger().warn(f"[Q] {SAVE_PATH} not found. Running with zeros.")
+            return False
+        try:
+            with open(SAVE_PATH, 'rb') as f:
+                data = np.load(f, allow_pickle=True).item()
+            if isinstance(data, dict):
+                updated = 0
+                for k, v in data.items():
+                    if (k in self.q_table) and (isinstance(v, (list, np.ndarray))) and (len(v) == 4):
+                        self.q_table[k] = list(map(float, v))
+                        updated += 1
+                self.get_logger().info(f"[Q] Loaded SARSA table from {SAVE_PATH} ({updated} states).")
+                return True
+        except Exception as e:
+            self.get_logger().warn(f"[Q] Failed to load {SAVE_PATH}: {e}")
+        return False
 
-        # --- ROS I/O ---
-        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_cb, qos_profile_sensor_data)
-        self.cmd_pub  = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.cmd_pub_stamped = self.create_publisher(TwistStamped, '/cmd_vel_stamped', 10)
-
-        # junction handling + time-bounded macro turns (no odom dependency)
-        self.turn_ctrl = TurnController(ang_speed=0.35, min_ticks=8, max_ticks=140)
-        self.supervisor = JunctionSupervisor(min_consec=2)
-
-        # control/deadman
-        self._have_scan = False
-        self._last_scan_time = 0.0
-        self._last_cmd = 'STOP'
-        self._startup_end = time.time() + 0.25  # tiny nudge only
-        self.create_timer(0.05, self._control_tick)  # 20 Hz
-
-        self._last_debug = 0.0
-        self.get_logger().info("[RUN] SARSA runner ready (right-wall, left-at-corner, U-turn at dead-end).")
-
-    # ---------- control loop (keeps robot moving smoothly) ----------
-    def _control_tick(self):
-        now = time.time()
-        tcmd = self.turn_ctrl.step()
-        if tcmd is not None:
-            self._publish_twist(tcmd); self._last_cmd = 'TURNING'; return
-        if now < self._startup_end:
-            self._publish_action('FORWARD'); return
-        if (not self._have_scan) or (now - self._last_scan_time) > 0.6:
-            # deadman: keep rolling forward gently until scans flow
-            self._publish_action('FORWARD'); return
-        # otherwise, repeat last command set by scan_cb
-        if self._last_cmd != 'TURNING':
-            self._publish_action(self._last_cmd)
-
-    # ---------- pub helpers ----------
-    def _publish_twist(self, tw: Twist):
-        self.cmd_pub.publish(tw)
-        ts = TwistStamped()
-        ts.header.stamp = self.get_clock().now().to_msg()
-        ts.twist = tw
-        self.cmd_pub_stamped.publish(ts)
-    def _publish_action(self, name: str):
-        lin, ang = self.actions[name]
-        tw = Twist()
-        tw.linear.x  = clamp(lin, -self.max_linear, self.max_linear)
-        tw.angular.z = float(ang)
-        self._publish_twist(tw)
-        self._last_cmd = name
-
-    # ---------- state helpers ----------
-    def _sector_avg(self, ranges, a_deg, b_deg):
+    # ====================== LiDAR helpers ======================
+    def _sector(self, ranges, a_deg, b_deg):
         n = len(ranges)
-        if n == 0: return float('inf')
+        if n == 0: return []
         if a_deg > b_deg:
             a = int(a_deg * n / 360.0)
-            vals = list(ranges[a:]) + list(ranges[:int(b_deg * n / 360.0)])
-        else:
-            a = int(a_deg * n / 360.0); b = int(b_deg * n / 360.0)
-            vals = list(ranges[a:b])
-        vals = [v for v in vals if v != float('inf') and not math.isnan(v)]
+            return list(ranges[a:]) + list(ranges[:int(b_deg * n / 360.0)])
+        a = int(a_deg * n / 360.0); b = int(b_deg * n / 360.0)
+        return list(ranges[a:b])
+
+    def _sector_avg(self, ranges, a_deg, b_deg):
+        vals = [v for v in self._sector(ranges, a_deg, b_deg) if v != float('inf') and not math.isnan(v)]
         return float(sum(vals) / len(vals)) if vals else float('inf')
 
     def _sector_min(self, ranges, a_deg, b_deg):
-        n = len(ranges)
-        if n == 0: return float('inf')
-        if a_deg > b_deg:
-            a = int(a_deg * n / 360.0)
-            vals = list(ranges[a:]) + list(ranges[:int(b_deg * n / 360.0)])
-        else:
-            a = int(a_deg * n / 360.0); b = int(b_deg * n / 360.0)
-            vals = list(ranges[a:b])
-        vals = [v for v in vals if not math.isnan(v)]
+        vals = [v for v in self._sector(ranges, a_deg, b_deg) if not math.isnan(v)]
         return float(min(vals)) if vals else float('inf')
 
     def _dist_to_state(self, d, which):
         B = self.bounds
-        if which == 'front':  avail = ['TOO_CLOSE','CLOSE','MEDIUM','FAR']
-        elif which == 'right': avail = ['TOO_CLOSE','CLOSE','MEDIUM','FAR','TOO_FAR']
-        else: avail = ['CLOSE','FAR']
+        if which == 'front':
+            avail = ['TOO_CLOSE', 'CLOSE', 'MEDIUM', 'FAR']
+        elif which == 'right':
+            avail = ['TOO_CLOSE', 'CLOSE', 'MEDIUM', 'FAR', 'TOO_FAR']
+        else:
+            avail = ['CLOSE', 'FAR']
         for s in avail:
             lo, hi = B[s]
             if lo <= d < hi: return s
         return 'TOO_FAR' if which == 'right' else 'FAR'
 
-    def _determine_state(self, scan):
-        L  = self._sector_avg(scan, *self.L_SECTOR)
-        F  = self._sector_avg(scan, *self.F_SECTOR)
-        RF = self._sector_avg(scan, *self.RF_SECTOR)
-        R  = self._sector_avg(scan, *self.R_SECTOR)
+    def determine_state(self, ranges):
+        L  = self._sector_avg(ranges, *self.L_SECTOR)
+        F  = self._sector_avg(ranges, *self.F_SECTOR)
+        RF = self._sector_avg(ranges, *self.RF_SECTOR)
+        R  = self._sector_avg(ranges, *self.R_SECTOR)
         s = ( self._dist_to_state(L,'left'),
               self._dist_to_state(F,'front'),
               self._dist_to_state(RF,'right_front'),
               self._dist_to_state(R,'right') )
         return s, (L, F, RF, R)
 
-    # ---------- action mask (mirrors trainer) ----------
-    def _build_action_mask(self, s, d, front_blocked):
+    # ====================== Policy helpers ======================
+    def build_action_mask(self, s, d, Fmin):
         L, F, RF, R = d
         left_state, front_state, _, right_state = s
 
+        front_blocked  = (Fmin < self.front_block_thresh) or (front_state in ('TOO_CLOSE','CLOSE'))
         right_present  = (R < self.side_detect_thresh) and not math.isinf(R)
-        left_present   = (L < self.side_detect_thresh) and not math.isinf(L)
+        # opening only if front is CLEAR
+        right_open     = (not right_present) and (right_state in ('FAR','TOO_FAR')) and (not front_blocked)
 
         left_too_close  = (left_state in ('TOO_CLOSE','CLOSE')) or (L < 0.55)
-        right_too_close = (right_state == 'TOO_CLOSE') or (R < self.right_scrape_thresh)
+        right_too_close = (right_state == 'TOO_CLOSE') or (R < 0.55)
 
-        # only allow LEFT at a real corner: front blocked AND right wall present
+        allow = {n: True for n in self.action_names}
+
         corner = front_blocked and right_present
-
-        allow = {name: True for name in self.action_names}
-        # 1) block FORWARD whenever front is blocked
-        if front_blocked:
-            allow['FORWARD'] = False
-        # 2) allow LEFT only at a corner; never if left is already close
-        if not corner or left_too_close:
-            allow['LEFT'] = False
-        # 3) avoid RIGHT if right wall is already very close (prevent scraping)
-        if right_too_close:
+        if corner:
+            # FORCE a left turn at real corners
+            allow['LEFT'] = True
             allow['RIGHT'] = False
+        else:
+            # away from corners, don’t scrape left or right
+            if left_too_close:
+                allow['LEFT'] = False
+            # RIGHT only for real openings and not scraping
+            if (not right_open) or right_too_close:
+                allow['RIGHT'] = False
 
-        return [allow[a] for a in self.action_names]
+        # If very close ahead, block FORWARD
+        if Fmin < (self.collision_front_thresh + 0.05):
+            allow['FORWARD'] = False
 
-    # ---------- greedy over allowed actions ----------
-    def _greedy_masked(self, s, allowed_mask):
+        return [allow[a] for a in self.action_names], corner
+
+    def greedy_masked(self, s, allowed_mask):
         idxs = [i for i, ok in enumerate(allowed_mask) if ok]
         if not idxs:
-            return self.action_names.index('STOP'), self.q_table[s]
-        qvals = self.q_table[s]
+            return self.action_names.index('STOP')
+        qvals = self.q_table.get(s, [0.0, 0.0, 0.0, 0.0])
         best = max(idxs, key=lambda i: qvals[i])
-        return int(best), qvals
+        # prefer FORWARD if basically tied
+        if (max(qvals[i] for i in idxs) - min(qvals[i] for i in idxs)) < 1e-9:
+            if self.action_names.index('FORWARD') in idxs:
+                return self.action_names.index('FORWARD')
+        return int(best)
 
-    # ---------- main callback ----------
+    # ====================== Exec ======================
+    def publish_action(self, name: str, lin_scale: float = 1.0):
+        base_lin, base_ang = self.actions[name]
+        lin = clamp(base_lin * lin_scale, -self.max_linear, self.max_linear)
+        ang = base_ang  # keep angular strong for turning near obstacles
+        tw = Twist(); tw.linear.x = float(lin); tw.angular.z = float(ang)
+        self.cmd_pub.publish(tw)
+        self._last_cmd_name = name
+
+    # ====================== Keepalive / Startup ======================
+    def control_tick(self):
+        now = time.time()
+        if now < self._startup_end_walltime:
+            self.publish_action('FORWARD')
+            return
+        if (not self._have_scan) or (now - self._last_scan_time) > 0.6:
+            self.publish_action('FORWARD')
+            return
+        self.publish_action(self._last_cmd_name)
+
+    # ====================== Main callback ======================
     def scan_cb(self, msg: LaserScan):
         self._have_scan = True
         self._last_scan_time = time.time()
+        self._sector_min_last = self._sector_min(msg.ranges, 345, 15)
 
-        # macro-turn in progress?
-        tcmd = self.turn_ctrl.step()
-        if tcmd is not None:
-            self._publish_twist(tcmd); self._last_cmd = 'TURNING'; return
-
-        # build state
-        s, d = self._determine_state(msg.ranges)
+        s, d = self.determine_state(msg.ranges)
         L, F, RF, R = d
-        Fmin = self._sector_min(msg.ranges, 345, 15)   # narrow front min for reflex
 
-        # junction management (left at corner, u-turn at dead-end)
-        f_s, l_s, r_s = self.supervisor.update(L, F, R)
-        event = self.supervisor.maybe_turn(f_s, l_s, r_s, self.turn_ctrl,
-                                           front_block=self.front_block_thresh,
-                                           side_block=0.40,
-                                           left_open=0.90)
-        if event is not None:
-            self._publish_action('STOP'); return
+        # --- Collision reflex: gentle LEFT arc rather than STOP ---
+        if (self._sector_min_last < self.collision_front_thresh) or (s[1] == 'TOO_CLOSE'):
+            self.sticky_steps_left = 10
+            self.sticky_action_idx = self.action_names.index('LEFT')
+            self.publish_action('LEFT', lin_scale=0.25)
+            if self.debug: self.get_logger().info("[RUN] Reflex LEFT (front hit).")
+            return
 
-        # determine "front blocked" for masking/reflex
-        front_blocked = (Fmin < self.front_block_thresh) or (s[1] in ('TOO_CLOSE','CLOSE'))
+        # --- Mask actions & detect corner ---
+        allowed_mask, is_corner = self.build_action_mask(s, d, self._sector_min_last)
 
-        # if front is blocked and no macro-turn started, do a simple reflex:
-        if front_blocked and not self.turn_ctrl.active:
-            # dead-end reflex
-            if (L < 0.40 and R < 0.40):
-                self.turn_ctrl.start(180.0)
-                self._publish_action('STOP'); return
-            # corner-left reflex (prefer left turns)
-            if (L > 0.90) and (R < self.side_detect_thresh):
-                self.turn_ctrl.start(90.0)
-                self._publish_action('STOP'); return
+        # --- Continue sticky if active ---
+        if self.sticky_steps_left > 0 and self.sticky_action_idx is not None:
+            a = self.sticky_action_idx
+            self.sticky_steps_left -= 1
+        else:
+            # Force LEFT at “real” right corner regardless of Q
+            if is_corner and allowed_mask[self.action_names.index('LEFT')]:
+                a = self.action_names.index('LEFT')
+                self.sticky_action_idx = a
+                self.sticky_steps_left = 8
+                if self.debug: self.get_logger().info("[RUN] Commit LEFT (corner).")
+            else:
+                # Right opening → short RIGHT arc to stick with wall
+                right_present = (R < self.side_detect_thresh) and not math.isinf(R)
+                right_open = (not right_present) and (s[3] in ('FAR','TOO_FAR')) and (s[1] in ('MEDIUM','FAR'))
+                if right_open and allowed_mask[self.action_names.index('RIGHT')]:
+                    a = self.action_names.index('RIGHT')
+                    self.sticky_action_idx = a
+                    self.sticky_steps_left = 6
+                    if self.debug: self.get_logger().info("[RUN] Commit RIGHT (right opening).")
+                else:
+                    a = self.greedy_masked(s, allowed_mask)
 
-        # choose best allowed action from SARSA table
-        allowed = self._build_action_mask(s, d, front_blocked)
-        a, qvals = self._greedy_masked(s, allowed)
+        # --- Slowdown linear near obstacles (keep angular unchanged) ---
+        Fmin = self._sector_min_last
+        lin_scale = 1.0 if Fmin >= self.slowdown_front_thresh else clamp((Fmin - 0.25) / (self.slowdown_front_thresh - 0.25), 0.2, 1.0)
+
+        # Execute
         name = self.action_names[a]
-        self._publish_action(name)
+        self.publish_action(name, lin_scale=lin_scale)
 
-        # minimal debug ~2 Hz
-        now = time.time()
-        if now - self._last_debug > 0.5:
-            self._last_debug = now
-            self.get_logger().info(f"[RUN] state={s} q={[round(float(x),2) for x in qvals]} allowed={allowed} -> {name}")
+        if self.debug:
+            q = [round(float(x), 3) for x in self.q_table.get(s, [0.0]*4)]
+            self.get_logger().info(f"[RUN] state={s} q={q} -> {name} (lin_scale={lin_scale:.2f})")
 
-# ---------- CLI ----------
+# ====================== CLI / Main ======================
 def parse_args(argv):
     p = argparse.ArgumentParser()
     p.add_argument('--max_linear', type=float, default=0.50)
+    p.add_argument('--debug', action='store_true')
     args, _ = p.parse_known_args(argv[1:])
     return args
 
 def main(argv=None):
     rclpy.init(args=argv)
     args = parse_args(sys.argv)
-    node = SarsaRun(max_linear=args.max_linear)
+    node = SarsaRun(max_linear=args.max_linear, debug=args.debug)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
