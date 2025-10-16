@@ -9,6 +9,5 @@ Experimenting with RL for Robotics. Currently working with
     - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=q_learning`
 
 3. SARSA 
-    - To train, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=sarsa`
-    - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=sarsa`
-
+    - To train, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=sarsa reward_mode:=shaped`
+    - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=sarsa reward_mode:=shaped`
