@@ -31,7 +31,7 @@ def quat_to_yaw(q: Quaternion) -> float:
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
     return math.atan2(siny_cosp, cosy_cosp)
 
-# ====================== Gentle turn controller (parity with q_td_train) ======================
+# ====================== Gentle turn controller (fixed-duration via dummy yaw) ======================
 class TurnController:
     def __init__(self, get_yaw, ang_speed=0.35, tol_deg=6.0, min_ticks=6, max_ticks=150):
         self._yaw = get_yaw
@@ -70,9 +70,9 @@ class TurnController:
 # ====================== SARSA Trainer (on-policy; right-wall; LiDAR-only) ======================
 class SarsaWallFollower(Node):
     """
-    SARSA (Expected SARSA) trainer that rewards following the RIGHT wall (LiDAR-only).
+    Follow the RIGHT wall; take LEFT at real corners; take U-TURN at dead ends.
     On collision (from LiDAR), teleport to start and start a new episode.
-    Control timer keeps sending commands even before the first scan arrives.
+    Uses Expected SARSA with a delayed update (uses next scan as s').
     """
     def __init__(self,
                  mode='train',
@@ -99,22 +99,24 @@ class SarsaWallFollower(Node):
         self.epsilon_decay = float(epsilon_decay)
         self.epsilon_min   = float(epsilon_min)
 
-        # ---- Motion & safety (mirror q_td_train) ----
+        # ---- Motion & safety ----
         self.max_linear = 0.50
         self.actions = {
             'FORWARD': (0.45,  0.0),
-            'LEFT':    (0.22,  0.60),
-            'RIGHT':   (0.22, -0.60),
+            'LEFT':    (0.22,  0.50),   # gentler
+            'RIGHT':   (0.22, -0.50),   # only for trimming back to right wall
             'STOP':    (0.0,   0.0),
         }
         self.action_names = list(self.actions.keys())
 
-        # LiDAR thresholds (mirror q_td_train)
+        # LiDAR thresholds
         self.collision_front_thresh = 0.20
         self.front_block_thresh     = 0.40
         self.side_detect_thresh     = 2.00
+        self.side_block_thresh      = 0.40
+        self.left_open_thresh       = 0.90
 
-        # Reward (LiDAR-only right-wall band; mirror q_td_train)
+        # Reward (LiDAR-only right-wall band)
         self.step_penalty       = -0.02
         self.collision_penalty  = -350.0
         self.forward_bonus      = 0.10
@@ -161,15 +163,19 @@ class SarsaWallFollower(Node):
         # start pose
         self.start_pose = {'x': -2.0, 'y': -3.2, 'yaw': 0.0}
 
-        # Gentle turn controller (dummy yaw; parity with q_td_train)
+        # Gentle turn controller (dummy yaw -> fixed-duration turns)
         self.turn_ctrl = TurnController(self._dummy_yaw, ang_speed=0.35, tol_deg=6.0, min_ticks=6, max_ticks=150)
 
         # 20 Hz control loop
         self.control_timer = self.create_timer(0.05, self.control_tick)
 
+        # SARSA delayed-update buffers
+        self.prev_state  = None
+        self.prev_action = None
+
         # Begin
         self.start_episode()
-        self.get_logger().info("SARSA trainer ready: follow RIGHT wall (LiDAR-only reward, gated turns).")
+        self.get_logger().info("SARSA trainer: follow RIGHT wall; LEFT at corners; U-TURN at dead ends (LiDAR-only).")
 
     # ====================== State space ======================
     def setup_state_space(self):
@@ -214,7 +220,7 @@ class SarsaWallFollower(Node):
         try:
             SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(SAVE_PATH, 'wb') as f:
-                np.save(f, self.q_table)   # using a file handle keeps the exact filename
+                np.save(f, self.q_table)   # keep exact filename
         except Exception as e:
             self.get_logger().warning(f"[Q] Failed to save table: {e}")
 
@@ -264,6 +270,8 @@ class SarsaWallFollower(Node):
         # after a teleport, ensure forward drive restarts immediately
         self._startup_end_walltime = time.time() + self.startup_forward_sec
         self._last_cmd = 'FORWARD'
+        self.prev_state = None
+        self.prev_action = None
 
     # ====================== LiDAR helpers ======================
     def _sector_avg(self, ranges, a_deg, b_deg):
@@ -321,56 +329,46 @@ class SarsaWallFollower(Node):
         self._last_cmd = name
 
     def eps_greedy_masked(self, s, allowed_mask):
-        # allowed_mask: list[bool] same length as actions
         idxs = [i for i, ok in enumerate(allowed_mask) if ok]
         if not idxs:
-            # safety fallback
             return self.action_names.index('FORWARD')
         if np.random.rand() < self.epsilon:
             return int(np.random.choice(idxs))
-        # greedy among allowed
         qvals = self.q_table[s]
-        best = max(idxs, key=lambda i: qvals[i])
-        return int(best)
+        return int(max(idxs, key=lambda i: qvals[i]))
 
     def build_action_mask(self, s, d, Fmin):
         """
-        Gate LEFT so it only happens at actual corners (front blocked & right wall present).
-        Also prevent LEFT when left wall is already close, and prevent RIGHT when right wall is too close.
+        Follow-right policy:
+          - FORWARD allowed unless front is blocked.
+          - LEFT allowed when right is too close (move away) OR at committed corner (handled separately).
+          - RIGHT allowed only when right is far/too-far (trim back to wall).
         """
         L, F, RF, R = d
         left_state, front_state, _, right_state = s
 
         front_blocked  = (Fmin < self.front_block_thresh) or (front_state in ('TOO_CLOSE','CLOSE'))
-        right_present  = (R < self.side_detect_thresh) and not math.isinf(R)
-        left_present   = (L < self.side_detect_thresh) and not math.isinf(L)
-
-        left_too_close  = (left_state in ('TOO_CLOSE','CLOSE')) or (L < 0.55)
-        right_too_close = (right_state == 'TOO_CLOSE') or (R < 0.55)
-
-        # Corner = real condition to allow LEFT
-        corner = front_blocked and right_present
 
         allow = {name: True for name in self.action_names}
+        allow['FORWARD'] = not front_blocked
 
-        # 1) Default: do NOT allow LEFT unless at a corner
-        if not corner:
-            allow['LEFT'] = False
+        # trim away from left wall if already close
+        if left_state in ('TOO_CLOSE','CLOSE'):
+            allow['LEFT'] = False  # we'll go forward until corner/U-turn
 
-        # 2) Safety: never LEFT if left wall is already close
-        if left_too_close:
-            allow['LEFT'] = False
-
-        # 3) Safety: avoid RIGHT if right wall is too close (don't scrape right wall)
-        if right_too_close:
+        # stay off the right wall
+        if right_state in ('TOO_CLOSE','CLOSE'):
+            allow['RIGHT'] = False
+        # only use RIGHT to come back to the wall
+        if right_state not in ('FAR','TOO_FAR'):
             allow['RIGHT'] = False
 
-        # 4) Always allow FORWARD unless immediate collision risk (handled elsewhere)
-        # STOP is always allowed but will rarely be chosen by Q unless useful.
+        # allow LEFT only as gentle correction when the right wall is too close
+        allow['LEFT'] = (right_state in ('TOO_CLOSE','CLOSE')) and (not front_blocked)
 
         return [allow[a] for a in self.action_names]
 
-    # ====================== Reward (LiDAR-only; same as q_td_train) ======================
+    # ====================== Reward (LiDAR-only; same idea as q_td_train) ======================
     def wall_follow_reward(self, dists, s, a_idx):
         Fmin = self._sector_min_last
         if Fmin < self.collision_front_thresh or s[1] == 'TOO_CLOSE':
@@ -386,14 +384,13 @@ class SarsaWallFollower(Node):
         progress = self.forward_bonus if self.action_names[a_idx] == 'FORWARD' else 0.0
         return band + progress + self.step_penalty
 
-    # ====================== Expected SARSA TD update (on-policy) ======================
-    def td_update_expected_sarsa(self, s, a, r, s2, allowed_mask_s2):
-        # Build on-policy π(a'|s2) over ALLOWED actions only (epsilon-greedy)
-        idxs = [i for i, ok in enumerate(allowed_mask_s2) if ok]
+    # ====================== Expected SARSA TD (on-policy) ======================
+    def td_expected_sarsa(self, s_prev, a_prev, r, s_cur, allowed_mask_s_cur):
+        idxs = [i for i, ok in enumerate(allowed_mask_s_cur) if ok]
         if not idxs:
             exp_q = 0.0
         else:
-            qvals = self.q_table[s2]
+            qvals = self.q_table[s_cur]
             best = max(idxs, key=lambda i: qvals[i])
             nA = len(idxs)
             pi = np.zeros(len(self.action_names), dtype=np.float64)
@@ -401,15 +398,20 @@ class SarsaWallFollower(Node):
                 pi[i] = self.epsilon / nA
             pi[best] += (1.0 - self.epsilon)
             exp_q = float(np.dot(pi, qvals))
-        target = r + self.gamma * exp_q
-        qsa = self.q_table[s][a]
-        self.q_table[s][a] = qsa + self.alpha * (target - qsa)
+        qsa = self.q_table[s_prev][a_prev]
+        self.q_table[s_prev][a_prev] = qsa + self.alpha * (r + self.gamma * exp_q - qsa)
+
+    def td_terminal(self, s_prev, a_prev, r):
+        qsa = self.q_table[s_prev][a_prev]
+        self.q_table[s_prev][a_prev] = qsa + self.alpha * (r - qsa)
 
     # ====================== Episodes ======================
     def start_episode(self):
         self.ep = getattr(self, 'ep', 0) + 1
         self.step = 0
         self.ep_return = 0.0
+        self.prev_state = None
+        self.prev_action = None
         self._startup_end_walltime = time.time() + self.startup_forward_sec
         if self.reset_mode == 'episode' or (self.reset_mode == 'once' and self.ep == 1):
             p = self.start_pose
@@ -448,74 +450,92 @@ class SarsaWallFollower(Node):
     def _dummy_yaw(self) -> float:
         return 0.0
 
-    # ====================== CONTROL LOOP (same flow as q_td_train) ======================
+    # ====================== CONTROL LOOP ======================
     def control_tick(self):
         now = time.time()
-        # keep turning if in a macro-turn
         tcmd = self.turn_ctrl.step()
         if tcmd is not None:
             self.cmd_pub.publish(tcmd)
             self._last_cmd = 'TURNING'
             return
-        # straight-first: drive forward even if no scans yet
         if now < self._startup_end_walltime:
-            self.publish_action('FORWARD')
-            return
-        # deadman: if we haven't seen a scan recently, keep moving forward
+            self.publish_action('FORWARD'); return
         if (not self._have_scan) or (now - self._last_scan_time) > 0.6:
-            self.publish_action('FORWARD')
-            return
-        # otherwise, repeat last command so Gazebo keeps moving smoothly
+            self.publish_action('FORWARD'); return
         self.publish_action(self._last_cmd if self._last_cmd != 'TURNING' else 'FORWARD')
 
-    # ====================== Main callback (SARSA with masking) ======================
+    # ====================== Main callback: delayed Expected SARSA + supervisor ======================
     def scan_cb(self, msg: LaserScan):
         self._have_scan = True
         self._last_scan_time = time.time()
         self._sector_min_last = self._sector_min(msg.ranges, 345, 15)
 
-        # discrete state
-        s, d = self.determine_state(msg.ranges)
-
-        # collision => immediate teleport + new episode
-        if (self._sector_min_last < self.collision_front_thresh) or (s[1] == 'TOO_CLOSE'):
-            self.ep_return += self.collision_penalty
-            self.get_logger().warn("[COLLISION] detected — teleporting to start and starting new episode.")
-            p = self.start_pose
-            self.teleport(p['x'], p['y'], p['yaw'], force=True)
-            self.end_episode('collision')
+        # If we're mid-turn, keep turning and don't learn (prevents corrupt updates)
+        tcmd = self.turn_ctrl.step()
+        if tcmd is not None:
+            self.cmd_pub.publish(tcmd)
+            self._last_cmd = 'TURNING'
             return
 
-        # optional goal stop
-        if self.at_goal():
-            self.get_logger().info("[GOAL] reached — stopping training.")
-            self.end_episode('goal')
+        # Current observation
+        s_cur, d_cur = self.determine_state(msg.ranges)
+        Fmin = self._sector_min_last
+
+        # ---- (A) compute reward for the *previous* transition and update
+        if self.prev_action is not None:
+            r = self.wall_follow_reward(d_cur, s_cur, self.prev_action)
+            # collision terminal?
+            if (Fmin < self.collision_front_thresh) or (s_cur[1] == 'TOO_CLOSE'):
+                self.td_terminal(self.prev_state, self.prev_action, r)
+                self.ep_return += r
+                self.get_logger().warn("[COLLISION] detected — teleporting to start and starting new episode.")
+                p = self.start_pose
+                self.teleport(p['x'], p['y'], p['yaw'], force=True)
+                self.end_episode('collision')
+                return
+            allowed_mask_cur = self.build_action_mask(s_cur, d_cur, Fmin)
+            self.td_expected_sarsa(self.prev_state, self.prev_action, r, s_cur, allowed_mask_cur)
+            self.ep_return += r
+            self.step += 1
+            if self.step >= self.steps_per_episode:
+                self.end_episode('timeout'); return
+
+        # ---- (B) supervisor: take LEFT at real corners / U-TURN at dead ends
+        front_blocked = (Fmin < self.front_block_thresh) or (s_cur[1] in ('TOO_CLOSE','CLOSE'))
+        right_present = (d_cur[3] < self.side_detect_thresh) and not math.isinf(d_cur[3])
+        left_present  = (d_cur[0] < self.side_detect_thresh) and not math.isinf(d_cur[0])
+        left_open     = (d_cur[0] > self.left_open_thresh) or math.isinf(d_cur[0])
+
+        dead_end = front_blocked and (d_cur[0] < self.side_block_thresh) and (d_cur[3] < self.side_block_thresh)
+        left_corner = front_blocked and left_open and right_present
+
+        if dead_end:
+            self.publish_action('STOP')
+            self.turn_ctrl.start(180.0)
+            self.prev_state = None; self.prev_action = None
+            return
+        if left_corner:
+            self.publish_action('STOP')
+            self.turn_ctrl.start(90.0)
+            self.prev_state = None; self.prev_action = None
             return
 
-        # Build action mask to prevent early/unsafe left turns and scraping right wall
-        allowed_mask = self.build_action_mask(s, d, self._sector_min_last)
+        # ---- (C) choose next on-policy action under mask (follow-right)
+        allowed_mask_cur = self.build_action_mask(s_cur, d_cur, Fmin)
+        a_cur = self.eps_greedy_masked(s_cur, allowed_mask_cur)
+        self.publish_action(self.action_names[a_cur])
 
-        # --- SARSA on-policy step (masked ε-greedy) ---
-        a = self.eps_greedy_masked(s, allowed_mask)
-        self.publish_action(self.action_names[a])
+        # set prev for next scan
+        self.prev_state  = s_cur
+        self.prev_action = a_cur
 
-        # reward + Expected SARSA TD
-        r = self.wall_follow_reward(d, s, a)
-        self.ep_return += r
-        s2, d2 = self.determine_state(msg.ranges)
-        allowed_mask_s2 = self.build_action_mask(s2, d2, self._sector_min_last)
-        self.td_update_expected_sarsa(s, a, r, s2, allowed_mask_s2)
-        self.step += 1
-
-        # timeout
-        if self.step >= self.steps_per_episode:
-            self.end_episode('timeout')
-            return
-
-        # autosave
-        if self.step % 500 == 0:
-            self.save_qtable()
-            self.get_logger().info(f"[TRAIN] autosave at step {self.step}, return={self.ep_return:.1f}")
+        # Autosave occasionally
+        if (self.step % 500) == 0 and self.step > 0:
+            try:
+                self.save_qtable()
+                self.get_logger().info(f"[TRAIN] autosave at step {self.step}, return={self.ep_return:.1f}")
+            except Exception:
+                pass
 
 # ====================== CLI / Main ======================
 def parse_args(argv):
