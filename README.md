@@ -5,10 +5,9 @@ Experimenting with RL for Robotics. Currently working with
     - Make sure you build the package and source the `install/setup.sh` before running the launch. 
 
 2. Q - Learning
-    - To train, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=q_learning`
+    - To train (headless), run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=q_learning gui:=false` 
     - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=q_learning`
 
 3. SARSA 
-    - To train, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=sarsa`
-    - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=sarsa`
-
+    - To train, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=train algorithm:=sarsa reward_mode:=shaped`
+    - To test, run - `ros2 launch wall_following_ros2 wall_following.launch.py mode:=test algorithm:=sarsa reward_mode:=shaped`
