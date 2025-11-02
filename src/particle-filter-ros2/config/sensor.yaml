@@ -1,0 +1,10 @@
+sensor_model:
+  ros__parameters:
+    map_yaml: maps/map.yaml
+    sigma_hit: 0.2
+    z_hit: 0.8
+    z_rand: 0.2
+    z_max: 3.5
+    beam_subsample: 20
+    distance_field_output: /home/aaphatak/ros2_ws/src/particle-filter-ros2/maps/distance_field.png
+    distance_field_invert: true

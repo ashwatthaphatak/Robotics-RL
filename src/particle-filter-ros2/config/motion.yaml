@@ -1,0 +1,6 @@
+motion_model:
+  ros__parameters:
+    alpha1: 0.02     # noise from rotation in rotation
+    alpha2: 0.02     # noise from translation in rotation
+    alpha3: 0.02     # noise from translation in translation
+    alpha4: 0.02     # noise from rotation in translation
