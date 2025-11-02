@@ -50,20 +50,33 @@ class MotionModel(Node):
     def compute_motion(prev, curr):
         dx, dy = curr.x - prev.x, curr.y - prev.y
         dtrans = math.hypot(dx, dy)
-        drot1 = math.atan2(dy, dx) - prev.theta
-        drot2 = curr.theta - prev.theta - drot1
+        if dtrans < 1e-6:
+            drot1 = 0.0
+            drot2 = MotionModel.normalize_angle(curr.theta - prev.theta)
+        else:
+            drot1 = MotionModel.normalize_angle(math.atan2(dy, dx) - prev.theta)
+            drot2 = MotionModel.normalize_angle(curr.theta - prev.theta - drot1)
         return drot1, dtrans, drot2
 
     def sample_motion_model_odometry(self, prev_pose, dr1, dt, dr2):
         a1, a2, a3, a4 = self.alpha
-        dr1_hat = dr1 - np.random.normal(0, a1*abs(dr1) + a2*abs(dt))
-        dt_hat  = dt  - np.random.normal(0, a3*abs(dt)  + a4*(abs(dr1)+abs(dr2)))
-        dr2_hat = dr2 - np.random.normal(0, a1*abs(dr2) + a2*abs(dt))
+        sigma1 = math.sqrt(a1 * dr1 * dr1 + a2 * dt * dt)
+        sigma2 = math.sqrt(a3 * dt * dt + a4 * (dr1 * dr1 + dr2 * dr2))
+        sigma3 = math.sqrt(a1 * dr2 * dr2 + a2 * dt * dt)
 
-        x_new = prev_pose.x + dt_hat * math.cos(prev_pose.theta + dr1_hat)
-        y_new = prev_pose.y + dt_hat * math.sin(prev_pose.theta + dr1_hat)
-        theta_new = prev_pose.theta + dr1_hat + dr2_hat
+        dr1_hat = dr1 - np.random.normal(0.0, sigma1)
+        dt_hat = dt - np.random.normal(0.0, sigma2)
+        dr2_hat = dr2 - np.random.normal(0.0, sigma3)
+
+        heading = prev_pose.theta + dr1_hat
+        x_new = prev_pose.x + dt_hat * math.cos(heading)
+        y_new = prev_pose.y + dt_hat * math.sin(heading)
+        theta_new = MotionModel.normalize_angle(prev_pose.theta + dr1_hat + dr2_hat)
         return Pose2D(x=x_new, y=y_new, theta=theta_new)
+
+    @staticmethod
+    def normalize_angle(angle):
+        return math.atan2(math.sin(angle), math.cos(angle))
 
 def main(args=None):
     rclpy.init(args=args)

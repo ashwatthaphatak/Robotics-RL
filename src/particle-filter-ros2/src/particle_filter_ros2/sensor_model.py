@@ -5,8 +5,11 @@ import cv2
 import yaml
 import numpy as np
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformException, TransformListener
 from ament_index_python.packages import get_package_share_directory
 
 class SensorModel(Node):
@@ -22,6 +25,7 @@ class SensorModel(Node):
         self.declare_parameter('beam_subsample', 20)
         self.declare_parameter('distance_field_output', '')
         self.declare_parameter('distance_field_invert', True)
+        self.declare_parameter('map_frame', 'map')
 
         self._share_dir = get_package_share_directory('particle-filter-ros2')
         default_map = os.path.join(self._share_dir, 'maps', 'map.yaml')
@@ -32,14 +36,21 @@ class SensorModel(Node):
         self.z_hit = p('z_hit').value
         self.z_rand = p('z_rand').value
         self.z_max = p('z_max').value
-        self.beam_subsample = p('beam_subsample').value
+        self.beam_subsample = max(1, int(p('beam_subsample').value))
         self.distance_field_output = self._resolve_output_path(
             p('distance_field_output').value,
             os.path.join(os.path.dirname(self.map_yaml), 'distance_field.png')
         )
         self.distance_field_invert = bool(p('distance_field_invert').value)
+        self.map_frame = p('map_frame').value or 'map'
 
         self.dist_field = None
+        self.map_resolution = None
+        self.map_origin = None
+        self.map_shape = None
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
 
         self.load_map(self.map_yaml)
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
@@ -105,7 +116,10 @@ class SensorModel(Node):
             img = 255 - img
         _, binary = cv2.threshold(img, info['occupied_thresh']*255, 255, cv2.THRESH_BINARY)
         dist = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-        self.dist_field = dist * info['resolution']
+        self.map_resolution = float(info['resolution'])
+        self.map_origin = info['origin']
+        self.map_shape = dist.shape[::-1]  # (width, height)
+        self.dist_field = dist * self.map_resolution
         if np.max(dist) > 0:
             normalized = (dist/np.max(dist)*255).astype(np.uint8)
         else:
@@ -119,12 +133,54 @@ class SensorModel(Node):
         if self.dist_field is None:
             return
 
+        source_frame = scan.header.frame_id or 'base_link'
+        target_time = Time.from_msg(scan.header.stamp)
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                self.map_frame,
+                source_frame,
+                target_time,
+                timeout=Duration(seconds=0.2)
+            )
+        except TransformException as exc:
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    self.map_frame,
+                    source_frame,
+                    Time(),
+                    timeout=Duration(seconds=0.2)
+                )
+                self.get_logger().warn(
+                    f"TF lookup failed at stamp ({target_time.nanoseconds}ns): {exc}. "
+                    "Using latest available transform instead."
+                )
+            except TransformException as exc_latest:
+                self.get_logger().warn(f"TF lookup failed: {exc_latest}")
+                return
+
+        trans = transform.transform.translation
+        rot = transform.transform.rotation
+        yaw = self.quaternion_to_yaw(rot)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        origin_x, origin_y = trans.x, trans.y
+
         total_loglik = 0.0
         count = 0
-        for r in scan.ranges[::int(self.beam_subsample)]:
-            if math.isinf(r) or r >= self.z_max:
+        range_step = self.beam_subsample
+        for i in range(0, len(scan.ranges), range_step):
+            r = scan.ranges[i]
+            if not math.isfinite(r) or r >= self.z_max or r <= scan.range_min:
                 continue
-            pz = self.prob_hit(r)
+            beam_angle = scan.angle_min + i * scan.angle_increment
+            sx = r * math.cos(beam_angle)
+            sy = r * math.sin(beam_angle)
+            wx = origin_x + cos_yaw * sx - sin_yaw * sy
+            wy = origin_y + sin_yaw * sx + cos_yaw * sy
+            dist_to_obs = self._lookup_distance(wx, wy)
+            if dist_to_obs is None:
+                continue
+            pz = self.prob_hit(dist_to_obs)
             total_loglik += math.log(max(pz, 1e-9))
             count += 1
         if count:
@@ -134,6 +190,30 @@ class SensorModel(Node):
         norm = 1.0 / (self.sigma_hit * math.sqrt(2*math.pi))
         return self.z_hit * norm * math.exp(-0.5 * (dist/self.sigma_hit)**2) + \
                self.z_rand * (1.0/self.z_max)
+
+    @staticmethod
+    def quaternion_to_yaw(q):
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                          1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+    def _world_to_map(self, x, y):
+        if self.map_resolution is None or self.map_origin is None or self.map_shape is None:
+            return None
+        origin_x, origin_y = self.map_origin[0], self.map_origin[1]
+        mx = int((x - origin_x) / self.map_resolution)
+        my = int((y - origin_y) / self.map_resolution)
+        width, height = self.map_shape
+        my_img = height - 1 - my
+        if mx < 0 or mx >= width or my_img < 0 or my_img >= height:
+            return None
+        return mx, my_img
+
+    def _lookup_distance(self, x, y):
+        cell = self._world_to_map(x, y)
+        if cell is None:
+            return None
+        mx, my = cell
+        return float(self.dist_field[my, mx])
 
 def main(args=None):
     rclpy.init(args=args)

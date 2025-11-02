@@ -7,4 +7,4 @@ sensor_model:
     z_max: 3.5
     beam_subsample: 20
     distance_field_output: /home/aaphatak/ros2_ws/src/particle-filter-ros2/maps/distance_field.png
-    distance_field_invert: true
+    distance_field_invert: false
