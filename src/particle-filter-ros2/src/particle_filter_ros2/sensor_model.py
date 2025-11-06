@@ -112,9 +112,12 @@ class SensorModel(Node):
             self.get_logger().error(f"Failed to read map image: {image_path}")
             return
 
-        if info['negate']:
-            img = 255 - img
-        _, binary = cv2.threshold(img, info['occupied_thresh']*255, 255, cv2.THRESH_BINARY)
+        occ_prob = img.astype(np.float32) / 255.0
+        if not info.get('negate', 0):
+            occ_prob = 1.0 - occ_prob
+
+        occupied = occ_prob >= float(info.get('occupied_thresh', 0.65))
+        binary = np.logical_not(occupied).astype(np.uint8) * 255
         dist = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
         self.map_resolution = float(info['resolution'])
         self.map_origin = info['origin']

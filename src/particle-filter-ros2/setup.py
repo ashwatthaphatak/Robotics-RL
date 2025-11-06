@@ -28,6 +28,7 @@ setup(
         "console_scripts": [
             "motion_model = particle_filter_ros2.motion_model:main",
             "sensor_model = particle_filter_ros2.sensor_model:main",
+            "particle_filter = particle_filter_ros2.particle_filter:main",
         ],
     },
 )

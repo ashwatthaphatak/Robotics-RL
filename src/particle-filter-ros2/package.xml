@@ -4,12 +4,13 @@
   <name>particle-filter-ros2</name>
   <version>0.1.0</version>
   <description>
-    CSC 591 Project 3 Deliverable 1: motion and sensor models for particle-filter localization.
+    CSC 591 Project 3 (Deliverables 1 & 2): odometry/sensor models plus a Monte Carlo localization node.
     After untarring into the root of a ROS 2 workspace, run `colcon build --packages-select particle-filter-ros2`,
     source `install/setup.bash`, then launch the full Gazebo demonstration with
-    `ros2 launch particle-filter-ros2 main.launch` (spawns TurtleBot3 house world and both nodes) or launch only the
-    motion/sensor nodes via `ros2 launch particle-filter-ros2 models.launch.py`. This package is adapted from the
-    course starter repository (peng-lab/particle-filter-ros2) with project-specific modifications.
+    `ros2 launch particle-filter-ros2 main.launch` (spawns the TurtleBot3 house world, bridges, RViz, and the particle
+    filter node) or run the algorithms standalone via `ros2 launch particle-filter-ros2 models.launch.py` and
+    `ros2 run particle-filter-ros2 particle_filter`. This package is adapted from the course starter repository
+    (peng-lab/particle-filter-ros2) with project-specific modifications.
   </description>
   <maintainer email="aaphatak@ncsu.edu">Ashwattha Phatak</maintainer>
   <license>MIT</license>

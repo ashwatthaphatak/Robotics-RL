@@ -56,12 +56,49 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    transform = Node(
+    map_server = Node(
+        package='nav2_map_server',
+        executable='map_server',
+        name='map_server',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'yaml_filename': os.path.join(package_share, 'maps', 'map.yaml'),
+            'topic_name': 'map',
+            'frame_id': 'map'
+        }]
+    )
+
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_localization',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'autostart': True,
+            'node_names': ['map_server']
+        }]
+    )
+
+    static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='static_tf_map_to_odom',
+        name='static_map_to_odom',
         arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
         output='screen'
+    )
+
+    pf_parameters = os.path.join(package_share, 'config', 'pf.yaml')
+    particle_filter = Node(
+        package='particle-filter-ros2',
+        executable='particle_filter',
+        name='particle_filter',
+        output='screen',
+        parameters=[
+            pf_parameters,
+            {'use_sim_time': use_sim_time}
+        ]
     )
 
     ld = LaunchDescription()
@@ -71,6 +108,9 @@ def generate_launch_description():
     ld.add_action(gz_service_bridge)
 
     ld.add_action(rviz)
-    ld.add_action(transform)
+    ld.add_action(map_server)
+    ld.add_action(lifecycle_manager)
+    ld.add_action(static_tf)
+    ld.add_action(particle_filter)
 
     return ld
