@@ -112,7 +112,8 @@ class ParticleFilter(Node):
         self.declare_parameter("alpha3", 0.02)
         self.declare_parameter("alpha4", 0.02)
         self.declare_parameter("map_frame", "map")
-        self.declare_parameter("robot_frame", "odom")
+        self.declare_parameter("odom_frame", "odom")
+        self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("publish_tf", True)
         self.declare_parameter("initialization_mode", "uniform")
         self.declare_parameter("initial_std_xy", 0.25)
@@ -120,15 +121,20 @@ class ParticleFilter(Node):
         self.declare_parameter("initial_pose_x", 0.0)
         self.declare_parameter("initial_pose_y", 0.0)
         self.declare_parameter("initial_pose_theta", 0.0)
+        self.declare_parameter("particle_topic", "/pf_particle_cloud")
 
         self.num_particles = int(self.get_parameter("num_particles").value)
         self.resample_threshold = float(self.get_parameter("resample_threshold").value)
-        self.map_frame = self.get_parameter("map_frame").value
-        self.robot_frame = self.get_parameter("robot_frame").value
+        self.map_frame  = self.get_parameter("map_frame").value
+        self.odom_frame = self.get_parameter("odom_frame").value
+        self.base_frame = self.get_parameter("base_frame").value
         self.publish_tf = bool(self.get_parameter("publish_tf").value)
         self.init_mode = str(self.get_parameter("initialization_mode").value).lower()
         self.init_std_xy = float(self.get_parameter("initial_std_xy").value)
         self.init_std_theta = float(self.get_parameter("initial_std_theta").value)
+
+        # Create TF broadcaster early so initialization routines can use it
+        self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
 
         map_yaml_param = self.get_parameter("map_yaml").value
         self.map_yaml = self._resolve_map(map_yaml_param)
@@ -150,6 +156,7 @@ class ParticleFilter(Node):
         self.publish_rate = float(self.get_parameter("publish_rate").value)
         self.odom_topic = self.get_parameter("odom_topic").value
         self.scan_topic = self.get_parameter("scan_topic").value
+        self.particle_topic = self.get_parameter("particle_topic").value
 
         self.manual_pose = Pose2D()
         self.manual_pose.x = float(self.get_parameter("initial_pose_x").value)
@@ -189,9 +196,8 @@ class ParticleFilter(Node):
 
         self.create_subscription(Odometry, self.odom_topic, self.odom_callback, qos)
         self.create_subscription(LaserScan, self.scan_topic, self.scan_callback, qos)
-        self.particle_pub = self.create_publisher(PoseArray, "/particle_cloud", 10)
+        self.particle_pub = self.create_publisher(PoseArray, self.particle_topic, 10)
         self.pose_pub = self.create_publisher(PoseStamped, "/pose_estimate", 10)
-        self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
 
         self.create_timer(1.0 / self.publish_rate, self.publish_outputs)
         self.get_logger().info("Particle filter node initialized.")
@@ -342,8 +348,8 @@ class ParticleFilter(Node):
         self.current_estimate[:] = [mean_xy[0], mean_xy[1], yaw]
 
         if self.tf_broadcaster and self.latest_odom is not None:
-            transform = self._compute_map_to_odom_transform(mean_xy, yaw, self.latest_odom)
-            self._broadcast_transform(stamp, transform)
+            tx, ty, theta = self._compute_map_to_odom_transform(mean_xy, yaw, self.latest_odom)
+            self._broadcast_transform(stamp, tx, ty, theta)
 
     def publish_outputs(self):
         if not self.initialized:
@@ -400,10 +406,10 @@ class ParticleFilter(Node):
         self.last_pose.pose.position.z = 0.0
         self.last_pose.pose.orientation = self._yaw_to_quaternion(self.current_estimate[2])
         if self.tf_broadcaster:
-            transform = self._compute_map_to_odom_transform(
+            tx, ty, theta = self._compute_map_to_odom_transform(
                 self.current_estimate[:2], self.current_estimate[2], odom_reference
             )
-            self._broadcast_transform(stamp, transform)
+            self._broadcast_transform(stamp, tx, ty, theta)
         self.get_logger().info(
             f"Initialized particles around map pose (x={map_pose.x:.2f}, y={map_pose.y:.2f}, θ={map_pose.theta:.2f})."
         )
@@ -429,36 +435,26 @@ class ParticleFilter(Node):
         q.w = math.cos(half)
         return q
 
-    @staticmethod
-    def _broadcast_transform(self, stamp, transform_tuple):
+    def _broadcast_transform(self, stamp, tx, ty, theta):
         if not self.tf_broadcaster:
             return
-        tx, ty, theta = transform_tuple
-        transform = TransformStamped()
-        transform.header.stamp = stamp
-        transform.header.frame_id = self.map_frame
-        transform.child_frame_id = self.robot_frame
-        transform.transform.translation.x = float(tx)
-        transform.transform.translation.y = float(ty)
-        transform.transform.translation.z = 0.0
-        transform.transform.rotation = self._yaw_to_quaternion(theta)
-        self.tf_broadcaster.sendTransform(transform)
+        t = TransformStamped()
+        t.header.stamp       = stamp
+        t.header.frame_id    = self.map_frame
+        t.child_frame_id     = self.odom_frame
+        t.transform.translation.x = float(tx)
+        t.transform.translation.y = float(ty)
+        t.transform.translation.z = 0.0
+        t.transform.rotation = self._yaw_to_quaternion(theta)
+        self.tf_broadcaster.sendTransform(t)
 
-    @staticmethod
-    def _compute_map_to_odom_transform(mean_xy: np.ndarray, yaw: float, odom_pose: Pose2D):
+    def _compute_map_to_odom_transform(self, mean_xy, yaw, odom_pose):
         if odom_pose is None:
-            odom_pose = Pose2D()
-            odom_pose.x = 0.0
-            odom_pose.y = 0.0
-            odom_pose.theta = 0.0
-        theta = MotionModel.normalize_angle(yaw - odom_pose.theta)
-        cos_t = math.cos(theta)
-        sin_t = math.sin(theta)
-        rot = np.array([[cos_t, -sin_t],
-                        [sin_t,  cos_t]])
-        odom_vec = np.array([odom_pose.x, odom_pose.y])
-        translation = mean_xy - rot.dot(odom_vec)
-        return float(translation[0]), float(translation[1]), theta
+            return 0.0, 0.0, 0.0
+        dx     = mean_xy[0] - odom_pose.x
+        dy     = mean_xy[1] - odom_pose.y
+        theta  = MotionModel.normalize_angle(yaw - odom_pose.theta)
+        return dx, dy, theta
 
 
 def main(args=None):

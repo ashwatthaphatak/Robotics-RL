@@ -5,6 +5,7 @@ particle_filter:
     map_yaml: maps/map.yaml
     odom_topic: /odom
     scan_topic: /scan
+    particle_topic: /pf_particle_cloud
     publish_rate: 10.0
     beam_subsample: 10
     sigma_hit: 0.2
@@ -16,8 +17,12 @@ particle_filter:
     alpha3: 0.02
     alpha4: 0.02
     map_frame: map
-    robot_frame: odom
-    publish_tf: false
-    initialization_mode: uniform  # options: 'uniform', 'manual', 'odom'
-    initial_std_xy: 0.25
-    initial_std_theta: 0.25
+    odom_frame: odom
+    base_frame: base_link
+    publish_tf: true
+    initialization_mode: manual  # options: 'uniform', 'manual', 'odom'
+    initial_pose_x: -2.0   # TurtleBot3 house spawn (see turtlebot3_house.launch.py)
+    initial_pose_y: -0.5
+    initial_pose_theta: 0.0
+    initial_std_xy: 0.15
+    initial_std_theta: 0.15

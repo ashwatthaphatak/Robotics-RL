@@ -65,7 +65,17 @@ export TURTLEBOT3_MODEL=burger
 ros2 launch particle-filter-ros2 particle_filter.launch
 ```
 
-Gazebo and RViz will also automatically launch, as well as some helper nodes for the necessary TF transforms and robot odometry. To visualize the particles, you can add a `PoseArray` display to the RViz window to visualize the particles you generate. You can also visualize the position of the robot by adding a `Pose` or `Odometry` display to the RViz window. You can also visualize the map by adding a `Map` display to the RViz window. Search the RViz documentation to learn more about `PoseArray`, `Map`, and `Odometry`. 
+Gazebo and RViz will also automatically launch, as well as some helper nodes for the necessary TF transforms and robot odometry. To visualize the particles, add a `PoseArray` display that subscribes to `/pf_particle_cloud`; this topic only carries the particle filter's PoseArray and avoids conflicts with Nav2's `/particle_cloud`. You can also visualize the position of the robot by adding a `Pose` or `Odometry` display to the RViz window. You can also visualize the map by adding a `Map` display to the RViz window. Search the RViz documentation to learn more about `PoseArray`, `Map`, and `Odometry`. 
+
+### Motion and Sensor Model Nodes
+
+Launch `ros2 launch particle-filter-ros2 models.launch.py` to run the standalone motion and sensor model nodes (RViz starts automatically; disable it with `start_rviz:=false` if you only need the nodes). The motion model now:
+
+- Initializes deterministically from the `motion.yaml` parameters (defaults now match the TurtleBot3 house spawn at `(-2.0, -0.5, 0.0)` or any `/initialpose` message published from RViz).
+- Publishes its predicted pose on `/motion_model/pose` so you can confirm it tracks teleop motion.
+- Listens for `/sensor_model/correction` messages (published by the sensor model) and blends them into its internal state using the configurable `correction_gain`.
+
+The sensor model consumes `/scan`, evaluates the likelihood field, and also publishes corrections on `/sensor_model/correction` (PoseWithCovarianceStamped) derived from the current map→robot transform. It additionally streams the per-beam hit locations on `/sensor_model/beam_endpoints` (PoseArray) so you can visualize the scatter of laser endpoints across the map and confirm the likelihood field boundaries are active. This lets the motion model incorporate measurement updates immediately and gives you visual feedback that the sensor data is constraining the pose.
 
 # Displaying map on RVIZ
 
@@ -89,5 +99,3 @@ The expected order of execution, therefore would be starting the map_server-> Se
 You can implement your code for the particle filter directly in the file `scripts/particle_filter.py`. 
 
 ![Screenshot](doc/img/particle_filter_screenshot.png)
-
-

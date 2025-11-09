@@ -81,14 +81,6 @@ def generate_launch_description():
         }]
     )
 
-    static_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_map_to_odom',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
-        output='screen'
-    )
-
     pf_parameters = os.path.join(package_share, 'config', 'pf.yaml')
     particle_filter = Node(
         package='particle-filter-ros2',
@@ -110,7 +102,6 @@ def generate_launch_description():
     ld.add_action(rviz)
     ld.add_action(map_server)
     ld.add_action(lifecycle_manager)
-    ld.add_action(static_tf)
     ld.add_action(particle_filter)
 
     return ld

@@ -4,3 +4,8 @@ motion_model:
     alpha2: 0.02     # noise from translation in rotation
     alpha3: 0.02     # noise from translation in translation
     alpha4: 0.02     # noise from rotation in translation
+    map_frame: map
+    initial_pose_x: -2.0
+    initial_pose_y: -0.5
+    initial_pose_theta: 0.0
+    correction_gain: 1.0
