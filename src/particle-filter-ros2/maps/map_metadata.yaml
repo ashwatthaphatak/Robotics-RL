@@ -1,0 +1,10 @@
+max_distance: 2.0
+origin:
+- -5.711
+- -5.038
+- 0
+resolution: 0.05
+shape:
+- 222
+- 310
+sigma: 0.2

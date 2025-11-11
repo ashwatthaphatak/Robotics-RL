@@ -1,313 +1,187 @@
 #!/usr/bin/env python3
-import os
-import math
-import cv2
-import yaml
 import numpy as np
-import rclpy
-from rclpy.duration import Duration
-from rclpy.node import Node
-from rclpy.time import Time
-from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Pose, PoseArray, PoseWithCovarianceStamped, Quaternion
-from tf2_ros import Buffer, TransformException, TransformListener
-from ament_index_python.packages import get_package_share_directory
+import yaml
 
-class SensorModel(Node):
-    def __init__(self):
-        super().__init__('sensor_model')
-
-        # Parameters
-        self.declare_parameter('map_yaml', '')
-        self.declare_parameter('sigma_hit', 0.2)
-        self.declare_parameter('z_hit', 0.8)
-        self.declare_parameter('z_rand', 0.2)
-        self.declare_parameter('z_max', 3.5)
-        self.declare_parameter('beam_subsample', 20)
-        self.declare_parameter('distance_field_output', '')
-        self.declare_parameter('distance_field_invert', True)
-        self.declare_parameter('map_frame', 'map')
-        self.declare_parameter('robot_frame', 'base_link')
-        self.declare_parameter('publish_corrections', True)
-
-        self._share_dir = get_package_share_directory('particle-filter-ros2')
-        default_map = os.path.join(self._share_dir, 'maps', 'map.yaml')
-
-        p = self.get_parameter
-        self.map_yaml = self._resolve_map_yaml(p('map_yaml').value, default_map)
-        self.sigma_hit = p('sigma_hit').value
-        self.z_hit = p('z_hit').value
-        self.z_rand = p('z_rand').value
-        self.z_max = p('z_max').value
-        self.beam_subsample = max(1, int(p('beam_subsample').value))
-        self.distance_field_output = self._resolve_output_path(
-            p('distance_field_output').value,
-            os.path.join(os.path.dirname(self.map_yaml), 'distance_field.png')
-        )
-        self.distance_field_invert = bool(p('distance_field_invert').value)
-        self.map_frame = p('map_frame').value or 'map'
-        self.robot_frame = p('robot_frame').value or 'base_link'
-        self.publish_corrections = bool(p('publish_corrections').value)
-
-        self.dist_field = None
-        self.map_resolution = None
-        self.map_origin = None
-        self.map_shape = None
-
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
-        self.correction_pub = self.create_publisher(
-            PoseWithCovarianceStamped, '/sensor_model/correction', 10
-        )
-        self.beam_debug_pub = self.create_publisher(
-            PoseArray, '/sensor_model/beam_endpoints', 10
-        )
-
-        self.load_map(self.map_yaml)
-        self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-        self.get_logger().info('Sensor model node started.')
-
-    def _resolve_map_yaml(self, value, default_map):
-        candidate = os.path.expanduser(value) if value else ''
-        if not candidate:
-            return default_map
-
-        if os.path.isabs(candidate) and os.path.exists(candidate):
-            return candidate
-
-        search_roots = [
-            self._share_dir,
-            os.path.join(self._share_dir, 'config'),
-        ]
-        for root in search_roots:
-            maybe = os.path.normpath(os.path.join(root, candidate))
-            if os.path.exists(maybe):
-                return maybe
-
-        self.get_logger().warn(
-            f"map_yaml parameter '{value}' not found; falling back to default {default_map}"
-        )
-        return default_map
-
-    def _resolve_output_path(self, value, default_output):
-        candidate = os.path.expanduser(value) if value else ''
-        if not candidate:
-            return default_output
-
-        if os.path.isabs(candidate):
-            output_dir = os.path.dirname(candidate)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-            return candidate
-
-        resolved = os.path.normpath(os.path.join(self._share_dir, candidate))
-        output_dir = os.path.dirname(resolved)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
-        return resolved
-
-    def load_map(self, map_yaml):
-        if not map_yaml or not os.path.exists(map_yaml):
-            self.get_logger().error(f"Map YAML not found: {map_yaml}")
-            return
-
-        with open(map_yaml, 'r') as f:
-            info = yaml.safe_load(f)
-
-        image_path = info['image']
-        if not os.path.isabs(image_path):
-            image_path = os.path.join(os.path.dirname(map_yaml), image_path)
-
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            self.get_logger().error(f"Failed to read map image: {image_path}")
-            return
-
-        occ_prob = img.astype(np.float32) / 255.0
-        if not info.get('negate', 0):
-            occ_prob = 1.0 - occ_prob
-
-        occupied = occ_prob >= float(info.get('occupied_thresh', 0.65))
-        binary = np.logical_not(occupied).astype(np.uint8) * 255
-        dist = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-        self.map_resolution = float(info['resolution'])
-        self.map_origin = info['origin']
-        self.map_shape = dist.shape[::-1]  # (width, height)
-        self.dist_field = dist * self.map_resolution
-        if np.max(dist) > 0:
-            normalized = (dist/np.max(dist)*255).astype(np.uint8)
-        else:
-            normalized = dist.astype(np.uint8)
-        if self.distance_field_invert:
-            normalized = 255 - normalized
-        cv2.imwrite(self.distance_field_output, normalized)
-        self.get_logger().info(f"Saved likelihood field → {self.distance_field_output}")
-
-    def scan_callback(self, scan):
-        if self.dist_field is None:
-            return
-
-        source_frame = scan.header.frame_id or 'base_link'
-        target_time = Time.from_msg(scan.header.stamp)
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                self.map_frame,
-                source_frame,
-                target_time,
-                timeout=Duration(seconds=0.2)
-            )
-        except TransformException as exc:
-            try:
-                transform = self.tf_buffer.lookup_transform(
-                    self.map_frame,
-                    source_frame,
-                    Time(),
-                    timeout=Duration(seconds=0.2)
-                )
-                self.get_logger().warn(
-                    f"TF lookup failed at stamp ({target_time.nanoseconds}ns): {exc}. "
-                    "Using latest available transform instead."
-                )
-            except TransformException as exc_latest:
-                self.get_logger().warn(f"TF lookup failed: {exc_latest}")
-                return
-
-        robot_tf = self._lookup_robot_pose(target_time)
-        if robot_tf is None and source_frame == self.robot_frame:
-            robot_tf = transform
-
-        trans = transform.transform.translation
-        rot = transform.transform.rotation
-        yaw = self.quaternion_to_yaw(rot)
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        origin_x, origin_y = trans.x, trans.y
-
-        total_loglik = 0.0
-        count = 0
-        beam_poses = []
-        range_step = self.beam_subsample
-        for i in range(0, len(scan.ranges), range_step):
-            r = scan.ranges[i]
-            if not math.isfinite(r) or r >= self.z_max or r <= scan.range_min:
+class SensorModel:
+    """
+    Likelihood field range finder model.
+    Algorithm: likelihood_field_range_finder_model(z_t, x_t, m)
+    """
+    
+    def __init__(self, likelihood_field_path, metadata_path, distance_map_path,
+                 z_hit=0.95, z_random=0.05, sigma_hit=0.2):
+        """
+        Initialize sensor model.
+        
+        Args:
+            likelihood_field_path: Path to likelihood field .npy file
+            metadata_path: Path to metadata YAML file
+            distance_map_path: Path to distance map .npy file
+            z_hit: Weight for hit probability (z_hit in algorithm)
+            z_random: Weight for random measurement (z_random in algorithm)
+            sigma_hit: Standard deviation for measurement noise (σ_hit)
+        """
+        # Load likelihood field (not actually used in simplified version)
+        # self.likelihood_field = np.load(likelihood_field_path)
+        
+        # Load distance map (this is the "dist" lookup table)
+        self.distance_map = np.load(distance_map_path)
+        
+        # Load metadata
+        with open(metadata_path, 'r') as f:
+            metadata = yaml.safe_load(f)
+        
+        self.resolution = metadata['resolution']
+        self.origin = np.array(metadata['origin'][:2])  # [x, y]
+        self.height, self.width = self.distance_map.shape
+        
+        # Sensor model parameters
+        self.z_hit = z_hit
+        self.z_random = z_random
+        self.sigma_hit = sigma_hit
+        
+        # Sensor specifications (will be updated from LaserScan)
+        self.z_max = None  # Maximum range
+        
+    def world_to_map(self, x, y):
+        """
+        Convert world coordinates to map pixel coordinates.
+        
+        Args:
+            x, y: World coordinates (meters)
+            
+        Returns:
+            mx, my: Map coordinates (pixels)
+        """
+        mx = int((x - self.origin[0]) / self.resolution)
+        my = int((y - self.origin[1]) / self.resolution)
+        return mx, my
+    
+    def prob(self, dist, sigma):
+        """
+        Compute probability density for Gaussian distribution.
+        prob(dist, σ_hit) = exp(-dist^2 / (2 * σ^2)) / (sqrt(2π) * σ)
+        
+        For simplicity, we can use unnormalized Gaussian:
+        exp(-dist^2 / (2 * σ^2))
+        """
+        return np.exp(-dist**2 / (2 * sigma**2))
+    
+    def likelihood_field_range_finder_model(self, z_t, x_t, laser_scan, debug=False):
+        """
+        Algorithm likelihood_field_range_finder_model(z_t, x_t, m).
+        
+        Args:
+            z_t: Laser scan (ranges array)
+            x_t: Particle pose [x, y, θ]
+            laser_scan: Full LaserScan message for metadata
+            debug: If True, print debug info for this particle
+            
+        Returns:
+            q: Likelihood/weight for this particle
+        """
+        # Extract particle pose
+        x, y, theta = x_t
+        
+        # Update z_max from laser scan
+        self.z_max = laser_scan.range_max
+        
+        # Line 1: q = 1
+        q = 1.0
+        
+        # Line 2: for all k do (iterate through laser beams)
+        # Downsample for efficiency (every 10th beam)
+        step = 10
+        
+        beam_count = 0
+        valid_count = 0
+        
+        for k in range(0, len(z_t), step):
+            z_k = z_t[k]
+            
+            # Line 3: if z_k^t ≠ z_max (skip max range readings)
+            if np.isinf(z_k) or z_k >= laser_scan.range_max:
                 continue
-            beam_angle = scan.angle_min + i * scan.angle_increment
-            sx = r * math.cos(beam_angle)
-            sy = r * math.sin(beam_angle)
-            wx = origin_x + cos_yaw * sx - sin_yaw * sy
-            wy = origin_y + sin_yaw * sx + cos_yaw * sy
-            dist_to_obs = self._lookup_distance(wx, wy)
-            if dist_to_obs is None:
+            
+            # Also skip invalid readings
+            if z_k < laser_scan.range_min:
                 continue
-            pz = self.prob_hit(dist_to_obs)
-            total_loglik += math.log(max(pz, 1e-9))
-            count += 1
-            pose = Pose()
-            pose.position.x = float(wx)
-            pose.position.y = float(wy)
-            pose.orientation = self._yaw_to_quaternion(yaw + beam_angle)
-            beam_poses.append(pose)
-        if count:
-            self.get_logger().info(f"Avg log-likelihood: {total_loglik/count:.3f}")
-        self._publish_correction(robot_tf)
-        self._publish_beam_debug(scan.header.stamp, beam_poses)
-
-    def prob_hit(self, dist):
-        norm = 1.0 / (self.sigma_hit * math.sqrt(2*math.pi))
-        return self.z_hit * norm * math.exp(-0.5 * (dist/self.sigma_hit)**2) + \
-               self.z_rand * (1.0/self.z_max)
-
-    @staticmethod
-    def quaternion_to_yaw(q):
-        return math.atan2(2.0 * (q.w * q.z + q.x * q.y),
-                          1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-
-    @staticmethod
-    def _yaw_to_quaternion(yaw):
-        half = yaw / 2.0
-        quat = Quaternion()
-        quat.x = 0.0
-        quat.y = 0.0
-        quat.z = math.sin(half)
-        quat.w = math.cos(half)
-        return quat
-
-    def _lookup_robot_pose(self, target_time):
-        try:
-            return self.tf_buffer.lookup_transform(
-                self.map_frame,
-                self.robot_frame,
-                target_time,
-                timeout=Duration(seconds=0.2)
+            
+            valid_count += 1
+            beam_count += 1
+            
+            # Beam angle in sensor/robot frame
+            theta_k = laser_scan.angle_min + k * laser_scan.angle_increment
+            
+            # Transform to world frame: 
+            # The beam angle must be rotated by the particle's theta
+            # Then we add the range to get the endpoint in world coordinates
+            beam_angle_world = theta + theta_k
+            
+            # Compute endpoint location in world frame
+            x_z_k = x + z_k * np.cos(beam_angle_world)
+            y_z_k = y + z_k * np.sin(beam_angle_world)
+            
+            # Convert to map coordinates
+            mx, my = self.world_to_map(x_z_k, y_z_k)
+            
+            # Check if within map bounds
+            if 0 <= mx < self.width and 0 <= my < self.height:
+                # Get minimum distance from distance map
+                # NOTE: distance_map is indexed as [y, x] (row, col)
+                dist = self.distance_map[my, mx]
+            else:
+                # Outside map - assign large distance (penalize out-of-bounds hits)
+                dist = self.z_max
+            
+            # Compute probability density
+            # q = q · (z_hit · prob(dist, σ_hit) + z_random / z_max)
+            p_hit = self.prob(dist, self.sigma_hit)
+            p_random = 1.0 / self.z_max
+            p = self.z_hit * p_hit + self.z_random * p_random
+            
+            # Multiply probabilities
+            q *= p
+            
+            if debug and valid_count <= 3:
+                import sys
+                print(f"  Beam {k}: range={z_k:.3f}m, angle_sensor={np.degrees(theta_k):.1f}°, "
+                      f"angle_world={np.degrees(beam_angle_world):.1f}°, "
+                      f"endpoint=({x_z_k:.2f}, {y_z_k:.2f}), "
+                      f"map_px=({mx}, {my}), dist={dist:.4f}, p={p:.6f}", 
+                      file=sys.stderr)
+        
+        if debug:
+            import sys
+            print(f"Particle ({x:.2f}, {y:.2f}, {np.degrees(theta):.1f}°): "
+                  f"valid_beams={valid_count}, final_weight={q:.10f}", 
+                  file=sys.stderr)
+        
+        return q
+    
+    def compute_weights(self, particles, laser_scan):
+        """
+        Compute weights for all particles using sensor model.
+        
+        Args:
+            particles: Nx3 array of particle poses
+            laser_scan: LaserScan message
+            
+        Returns:
+            weights: N-length array of particle weights
+        """
+        num_particles = particles.shape[0]
+        weights = np.zeros(num_particles)
+        
+        z_t = np.array(laser_scan.ranges)
+        
+        for i in range(num_particles):
+            weights[i] = self.likelihood_field_range_finder_model(
+                z_t, particles[i], laser_scan
             )
-        except TransformException as exc:
-            try:
-                latest = self.tf_buffer.lookup_transform(
-                    self.map_frame,
-                    self.robot_frame,
-                    Time(),
-                    timeout=Duration(seconds=0.2)
-                )
-                self.get_logger().warn(
-                    f"Robot pose lookup failed at stamp ({target_time.nanoseconds}ns): {exc}. "
-                    "Using latest available transform instead."
-                )
-                return latest
-            except TransformException as exc_latest:
-                self.get_logger().warn(f"Robot pose lookup failed: {exc_latest}")
-                return None
-
-    def _publish_correction(self, transform):
-        if not self.publish_corrections or transform is None:
-            return
-        msg = PoseWithCovarianceStamped()
-        msg.header = transform.header
-        msg.header.frame_id = self.map_frame
-        msg.pose.pose.position.x = transform.transform.translation.x
-        msg.pose.pose.position.y = transform.transform.translation.y
-        msg.pose.pose.position.z = transform.transform.translation.z
-        msg.pose.pose.orientation = transform.transform.rotation
-
-        variance_xy = max(self.sigma_hit ** 2, 1e-6)
-        variance_theta = max(self.z_hit ** 2, 1e-6)
-        cov = [0.0] * 36
-        cov[0] = variance_xy
-        cov[7] = variance_xy
-        cov[35] = variance_theta
-        msg.pose.covariance = cov
-        self.correction_pub.publish(msg)
-
-    def _publish_beam_debug(self, stamp, beam_poses):
-        if not beam_poses or self.beam_debug_pub.get_subscription_count() == 0:
-            return
-        msg = PoseArray()
-        msg.header.stamp = stamp
-        msg.header.frame_id = self.map_frame
-        msg.poses = beam_poses
-        self.beam_debug_pub.publish(msg)
-
-    def _world_to_map(self, x, y):
-        if self.map_resolution is None or self.map_origin is None or self.map_shape is None:
-            return None
-        origin_x, origin_y = self.map_origin[0], self.map_origin[1]
-        mx = int((x - origin_x) / self.map_resolution)
-        my = int((y - origin_y) / self.map_resolution)
-        width, height = self.map_shape
-        my_img = height - 1 - my
-        if mx < 0 or mx >= width or my_img < 0 or my_img >= height:
-            return None
-        return mx, my_img
-
-    def _lookup_distance(self, x, y):
-        cell = self._world_to_map(x, y)
-        if cell is None:
-            return None
-        mx, my = cell
-        return float(self.dist_field[my, mx])
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = SensorModel()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+        
+        # Normalize weights
+        weights += 1e-300  # Avoid division by zero
+        weights /= np.sum(weights)
+        
+        return weights

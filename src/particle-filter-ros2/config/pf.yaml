@@ -1,6 +1,6 @@
 particle_filter:
   ros__parameters:
-    num_particles: 200
+    num_particles: 500
     resample_threshold: 0.5
     map_yaml: maps/map.yaml
     odom_topic: /odom
