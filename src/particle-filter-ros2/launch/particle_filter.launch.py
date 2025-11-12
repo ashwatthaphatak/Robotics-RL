@@ -105,15 +105,14 @@ def generate_launch_description():
     )
 
     # PARTICLE FILTER NODE - Run script from scripts directory
-    particle_filter_node = Node(
-        package='particle-filter-ros2',
-        executable='particle_filter',
+    particle_filter_node = ExecuteProcess(
+        cmd=[
+            'python3',
+            particle_filter_script
+        ],
         name='particle_filter',
         output='screen',
-        emulate_tty=True,
-        parameters=[{
-            'use_sim_time': use_sim_time
-        }]
+        shell=False
     )
 
     ld = LaunchDescription()

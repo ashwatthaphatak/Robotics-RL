@@ -37,12 +37,15 @@ class ParticleFilter(Node):
         self.declare_parameter('z_hit', 0.95)
         self.declare_parameter('z_random', 0.05)
         self.declare_parameter('sigma_hit', 0.2)
-        self.declare_parameter('resample_threshold', 0.5)
         
         self.num_particles = self.get_parameter('num_particles').value
-        self.resample_threshold = self.get_parameter('resample_threshold').value
         
-        # Initialize motion model first
+        # Initialize particles uniformly over the map
+        self.particles = None
+        self.weights = None
+        self.initialize_particles()
+        
+        # Initialize motion model
         self.motion_model = MotionModel(
             alpha1=self.get_parameter('alpha1').value,
             alpha2=self.get_parameter('alpha2').value,
@@ -61,8 +64,8 @@ class ParticleFilter(Node):
             
             self.sensor_model = SensorModel(
                 likelihood_field_path=os.path.join(maps_dir, 'likelihood_field.npy'),
-                metadata_path=os.path.join(maps_dir, 'map_metadata.yaml'),
-                distance_map_path=os.path.join(maps_dir, 'distance_field.npy'),
+                metadata_path=os.path.join(maps_dir, 'likelihood_field_metadata.yaml'),
+                distance_map_path=os.path.join(maps_dir, 'likelihood_field_distance.npy'),
                 z_hit=self.get_parameter('z_hit').value,
                 z_random=self.get_parameter('z_random').value,
                 sigma_hit=self.get_parameter('sigma_hit').value
@@ -73,11 +76,6 @@ class ParticleFilter(Node):
         except Exception as e:
             self.get_logger().error(f'Failed to initialize sensor model: {e}')
             raise
-
-        # Now initialize particles uniformly over the actual map
-        self.particles = None
-        self.weights = None
-        self.initialize_particles()
         
         # Subscribers
         self.odom_sub = self.create_subscription(
@@ -125,18 +123,9 @@ class ParticleFilter(Node):
         self.get_logger().info(f'=== PARTICLE FILTER INITIALIZED with {self.num_particles} particles ===')
     
     def initialize_particles(self):
-        """Initialize particles uniformly over the actual map boundaries."""
-        # Get map boundaries from sensor model metadata
-        origin_x, origin_y = self.sensor_model.origin
-        map_width_pixels = self.sensor_model.width
-        map_height_pixels = self.sensor_model.height
-        resolution = self.sensor_model.resolution
-        
-        # Calculate world-space map boundaries
-        x_min = origin_x
-        x_max = origin_x + (map_width_pixels * resolution)
-        y_min = origin_y
-        y_max = origin_y + (map_height_pixels * resolution)
+        """Initialize particles uniformly over the map."""
+        x_min, x_max = -5.0, 5.0
+        y_min, y_max = -5.0, 5.0
         
         self.particles = np.zeros((self.num_particles, 3))
         self.particles[:, 0] = np.random.uniform(x_min, x_max, self.num_particles)
@@ -145,13 +134,7 @@ class ParticleFilter(Node):
         
         self.weights = np.ones(self.num_particles) / self.num_particles
         
-        self.get_logger().info(
-            f'Particles initialized uniformly over map:\n'
-            f'  X range: [{x_min:.3f}, {x_max:.3f}] meters\n'
-            f'  Y range: [{y_min:.3f}, {y_max:.3f}] meters\n'
-            f'  Resolution: {resolution} m/pixel\n'
-            f'  Map size: {map_width_pixels}x{map_height_pixels} pixels'
-        )
+        self.get_logger().info('Particles initialized uniformly')
     
     def initial_pose_callback(self, msg):
         """Handle initial pose estimate from RViz."""
@@ -201,22 +184,7 @@ class ParticleFilter(Node):
             self.get_logger().info('First scan received')
         
         self.weights = self.sensor_model.compute_weights(self.particles, msg)
-        
-        # Debug: log weight statistics
-        min_w = np.min(self.weights)
-        max_w = np.max(self.weights)
-        mean_w = np.mean(self.weights)
-        
-        self.get_logger().info(
-            f'Weights: min={min_w:.2e}, max={max_w:.2e}, mean={mean_w:.2e}, '
-            f'std={np.std(self.weights):.2e}'
-        )
-        
-        # Always resample after sensor update to concentrate particles around high-weight areas
-        # This is more aggressive than adaptive resampling but helps convergence
-        self.get_logger().info(f'→ RESAMPLING (always after scan)')
         self.resample()
-        
         self.publish_estimated_pose()
         # DON'T publish here either
         self.particles_updated = True
@@ -235,12 +203,7 @@ class ParticleFilter(Node):
             new_particles[m] = self.particles[i]
         
         self.particles = new_particles
-        # Keep uniform weights ONLY after resampling for the NEXT prediction step
-        # This preserves particle diversity but doesn't erase the sensor information
         self.weights = np.ones(self.num_particles) / self.num_particles
-        
-        # Log resampling info for debugging
-        self.get_logger().debug(f'Resampled {self.num_particles} particles')
     
     def publish_particles(self):
         """Publish particle cloud for visualization - called by timer at 5 Hz."""
@@ -283,15 +246,6 @@ class ParticleFilter(Node):
         cos_sum = np.sum(self.weights * np.cos(self.particles[:, 2]))
         theta_mean = np.arctan2(sin_sum, cos_sum)
         
-        # Calculate standard deviation (spread) of particle cloud
-        spread_x = np.sqrt(np.sum(self.weights * (self.particles[:, 0] - x_mean)**2))
-        spread_y = np.sqrt(np.sum(self.weights * (self.particles[:, 1] - y_mean)**2))
-        
-        self.get_logger().info(
-            f'Estimated pose: ({x_mean:.2f}, {y_mean:.2f}, {np.degrees(theta_mean):.1f}°), '
-            f'spread: ({spread_x:.2f}, {spread_y:.2f})'
-        )
-        
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'map'
@@ -308,8 +262,8 @@ class ParticleFilter(Node):
         msg.pose.pose.orientation.z = float(quat[2])
         msg.pose.pose.orientation.w = float(quat[3])
         
-        msg.pose.covariance[0] = spread_x**2
-        msg.pose.covariance[7] = spread_y**2
+        msg.pose.covariance[0] = 0.1
+        msg.pose.covariance[7] = 0.1
         msg.pose.covariance[35] = 0.1
         
         self.pose_pub.publish(msg)

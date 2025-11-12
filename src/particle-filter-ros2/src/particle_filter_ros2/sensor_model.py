@@ -67,7 +67,7 @@ class SensorModel:
         """
         return np.exp(-dist**2 / (2 * sigma**2))
     
-    def likelihood_field_range_finder_model(self, z_t, x_t, laser_scan, debug=False):
+    def likelihood_field_range_finder_model(self, z_t, x_t, laser_scan):
         """
         Algorithm likelihood_field_range_finder_model(z_t, x_t, m).
         
@@ -75,7 +75,6 @@ class SensorModel:
             z_t: Laser scan (ranges array)
             x_t: Particle pose [x, y, θ]
             laser_scan: Full LaserScan message for metadata
-            debug: If True, print debug info for this particle
             
         Returns:
             q: Likelihood/weight for this particle
@@ -93,9 +92,6 @@ class SensorModel:
         # Downsample for efficiency (every 10th beam)
         step = 10
         
-        beam_count = 0
-        valid_count = 0
-        
         for k in range(0, len(z_t), step):
             z_k = z_t[k]
             
@@ -107,56 +103,38 @@ class SensorModel:
             if z_k < laser_scan.range_min:
                 continue
             
-            valid_count += 1
-            beam_count += 1
-            
-            # Beam angle in sensor/robot frame
+            # Beam angle in world frame
             theta_k = laser_scan.angle_min + k * laser_scan.angle_increment
             
-            # Transform to world frame: 
-            # The beam angle must be rotated by the particle's theta
-            # Then we add the range to get the endpoint in world coordinates
-            beam_angle_world = theta + theta_k
+            # Assuming sensor is at robot center (x_k,sens = 0, y_k,sens = 0)
+            # Line 4-5: Compute endpoint location
+            # x_z_k = x + x_k,sens·cos(θ) - y_k,sens·sin(θ) + z_k·cos(θ + θ_k,sens)
+            # y_z_k = y + y_k,sens·cos(θ) + x_k,sens·sin(θ) + z_k·sin(θ + θ_k,sens)
+            x_z_k = x + z_k * np.cos(theta + theta_k)
+            y_z_k = y + z_k * np.sin(theta + theta_k)
             
-            # Compute endpoint location in world frame
-            x_z_k = x + z_k * np.cos(beam_angle_world)
-            y_z_k = y + z_k * np.sin(beam_angle_world)
-            
+            # Line 6: Check lookup table (distance matrix)
             # Convert to map coordinates
             mx, my = self.world_to_map(x_z_k, y_z_k)
             
             # Check if within map bounds
             if 0 <= mx < self.width and 0 <= my < self.height:
                 # Get minimum distance from distance map
-                # NOTE: distance_map is indexed as [y, x] (row, col)
                 dist = self.distance_map[my, mx]
             else:
-                # Outside map - assign large distance (penalize out-of-bounds hits)
+                # Outside map - assign large distance
                 dist = self.z_max
             
-            # Compute probability density
+            # Line 7: Compute probability density
             # q = q · (z_hit · prob(dist, σ_hit) + z_random / z_max)
             p_hit = self.prob(dist, self.sigma_hit)
             p_random = 1.0 / self.z_max
             p = self.z_hit * p_hit + self.z_random * p_random
             
-            # Multiply probabilities
+            # Line 8: Multiply probabilities
             q *= p
-            
-            if debug and valid_count <= 3:
-                import sys
-                print(f"  Beam {k}: range={z_k:.3f}m, angle_sensor={np.degrees(theta_k):.1f}°, "
-                      f"angle_world={np.degrees(beam_angle_world):.1f}°, "
-                      f"endpoint=({x_z_k:.2f}, {y_z_k:.2f}), "
-                      f"map_px=({mx}, {my}), dist={dist:.4f}, p={p:.6f}", 
-                      file=sys.stderr)
         
-        if debug:
-            import sys
-            print(f"Particle ({x:.2f}, {y:.2f}, {np.degrees(theta):.1f}°): "
-                  f"valid_beams={valid_count}, final_weight={q:.10f}", 
-                  file=sys.stderr)
-        
+        # Line 9: return q
         return q
     
     def compute_weights(self, particles, laser_scan):
