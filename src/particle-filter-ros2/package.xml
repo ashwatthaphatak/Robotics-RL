@@ -4,16 +4,46 @@
   <name>particle-filter-ros2</name>
   <version>0.1.0</version>
   <description>
-    CSC 591 Project 3 (Deliverables 1 & 2): odometry/sensor models plus a Monte Carlo localization node.
-    After untarring into the root of a ROS 2 workspace, run `colcon build --packages-select particle-filter-ros2`,
-    source `install/setup.bash`, then launch the full Gazebo demonstration with
-    `ros2 launch particle-filter-ros2 main.launch` (spawns the TurtleBot3 house world, bridges, RViz, and the particle
-    filter node) or run the algorithms standalone via `ros2 launch particle-filter-ros2 models.launch.py` and
-    `ros2 run particle-filter-ros2 particle_filter`. This package is adapted from the course starter repository
-    (peng-lab/particle-filter-ros2) with project-specific modifications.
+    Particle Filter MCL for TurtleBot3 with heading alignment corrections.
+
+    SETUP:
+    1. Build: colcon build --packages-select particle-filter-ros2
+    2. Source: source install/setup.bash
+
+    RUNNING THE PARTICLE FILTER:
+    Terminal 1 (Gazebo + RViz):
+      ros2 launch particle-filter-ros2 particle_filter.launch.py 
+
+    Terminal 2 (Particle Filter Node):
+      ros2 run particle-filter-ros2 particle_filter
+
+    Terminal 3 (Teleop Control):
+      ros2 run turtlebot3_teleop teleop_keyboard
+
+    RVIZ CONFIGURATION:
+    - Add PoseArray display for /particlecloud
+      * Set "Displacement" (not Position) to visualize particle headings
+    - Add PoseWithCovarianceStamped display for /amcl_pose
+      * Set "Displacement" (not Position) to visualize estimated pose
+    - Both should align with robot heading when converged
+
+    KEY PARAMETERS (config/pf.yaml):
+    - num_particles: 5000 (covers entire map initially)
+    - laser_offset_angle: 3.14159 (180° - laser mounted backward)
+    - z_hit: 0.95, z_rand: 0.05 (aggressive heading discrimination)
+    - sigma_hit: 0.05 (tight sensor tolerance)
+    - alpha1-4: 0.01 (follow odometry closely)
+
+    EXPECTED BEHAVIOR:
+    - Particles initially spread across entire map
+    - After 1st scan: Converge to robot position
+    - After 2nd scan: Align with robot heading
+    - Result: Particles point same direction as robot
   </description>
   <maintainer email="aaphatak@ncsu.edu">Ashwattha Phatak</maintainer>
   <license>MIT</license>
+    
+  <!-- Demo Video: https://youtu.be/qKmTCSr2ixU -->
 
   <buildtool_depend>ament_python</buildtool_depend>
 
@@ -24,8 +54,12 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_interfaces</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>turtlebot3_gazebo</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

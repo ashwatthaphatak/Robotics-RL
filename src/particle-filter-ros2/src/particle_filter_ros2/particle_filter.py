@@ -37,6 +37,7 @@ class ParticleFilter(Node):
         self.declare_parameter('z_hit', 0.95)
         self.declare_parameter('z_random', 0.05)
         self.declare_parameter('sigma_hit', 0.2)
+        self.declare_parameter('laser_offset_angle', 0.0)
         
         self.num_particles = self.get_parameter('num_particles').value
         
@@ -68,7 +69,8 @@ class ParticleFilter(Node):
                 distance_map_path=os.path.join(maps_dir, 'likelihood_field_distance.npy'),
                 z_hit=self.get_parameter('z_hit').value,
                 z_random=self.get_parameter('z_random').value,
-                sigma_hit=self.get_parameter('sigma_hit').value
+                sigma_hit=self.get_parameter('sigma_hit').value,
+                laser_offset_angle=self.get_parameter('laser_offset_angle').value
             )
             
             self.get_logger().info('Sensor model initialized')
@@ -123,14 +125,25 @@ class ParticleFilter(Node):
         self.get_logger().info(f'=== PARTICLE FILTER INITIALIZED with {self.num_particles} particles ===')
     
     def initialize_particles(self):
-        """Initialize particles uniformly over the map."""
-        x_min, x_max = -5.0, 5.0
-        y_min, y_max = -5.0, 5.0
+        """Initialize particles uniformly over the entire map with unique headings."""
+        # Spawn across entire map based on map.yaml
+        # Map range: X [-5.71, 9.79], Y [-5.04, 6.06]
+        x_min, x_max = -5.71, 9.79
+        y_min, y_max = -5.04, 6.06
         
         self.particles = np.zeros((self.num_particles, 3))
         self.particles[:, 0] = np.random.uniform(x_min, x_max, self.num_particles)
         self.particles[:, 1] = np.random.uniform(y_min, y_max, self.num_particles)
-        self.particles[:, 2] = np.random.uniform(-np.pi, np.pi, self.num_particles)
+        
+        # Ensure each particle has a unique heading by distributing them evenly
+        # around the full 360° range, with some random noise
+        heading_base = np.linspace(-np.pi, np.pi, self.num_particles)
+        heading_noise = np.random.uniform(-0.1, 0.1, self.num_particles)
+        self.particles[:, 2] = heading_base + heading_noise
+        
+        # Normalize headings to [-pi, pi]
+        self.particles[:, 2] = np.arctan2(np.sin(self.particles[:, 2]), 
+                                          np.cos(self.particles[:, 2]))
         
         self.weights = np.ones(self.num_particles) / self.num_particles
         
@@ -150,7 +163,11 @@ class ParticleFilter(Node):
         
         self.particles[:, 0] = np.random.normal(x, 0.5, self.num_particles)
         self.particles[:, 1] = np.random.normal(y, 0.5, self.num_particles)
-        self.particles[:, 2] = np.random.normal(theta, 0.3, self.num_particles)
+        
+        # Distribute headings around the estimated theta with noise
+        heading_base = np.linspace(theta - np.pi, theta + np.pi, self.num_particles)
+        heading_noise = np.random.normal(0, 0.3, self.num_particles)
+        self.particles[:, 2] = heading_base + heading_noise
         
         self.particles[:, 2] = np.arctan2(np.sin(self.particles[:, 2]), 
                                           np.cos(self.particles[:, 2]))
@@ -222,12 +239,15 @@ class ParticleFilter(Node):
                 pose.position.y = float(self.particles[i, 1])
                 pose.position.z = 0.0
 
-                # Convert yaw to quaternion
+                # Convert yaw to quaternion using scipy for consistency
                 theta = float(self.particles[i, 2])
-                pose.orientation.x = 0.0
-                pose.orientation.y = 0.0
-                pose.orientation.z = float(np.sin(theta / 2.0))
-                pose.orientation.w = float(np.cos(theta / 2.0))
+                from scipy.spatial.transform import Rotation
+                r = Rotation.from_euler('xyz', [0, 0, theta])
+                quat = r.as_quat()
+                pose.orientation.x = float(quat[0])
+                pose.orientation.y = float(quat[1])
+                pose.orientation.z = float(quat[2])
+                pose.orientation.w = float(quat[3])
 
                 msg.poses.append(pose)
 

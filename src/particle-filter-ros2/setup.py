@@ -29,6 +29,8 @@ setup(
             "motion_model = particle_filter_ros2.motion_model:main",
             "sensor_model = particle_filter_ros2.sensor_model:main",
             "particle_filter = particle_filter_ros2.particle_filter:main",
+            "a_star_planner = particle_filter_ros2.a_star_planner:main",
+            "set_gz_pose = particle_filter_ros2.set_gz_pose:main",
         ],
     },
 )

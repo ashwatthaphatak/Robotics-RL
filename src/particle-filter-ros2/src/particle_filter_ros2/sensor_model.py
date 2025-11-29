@@ -9,7 +9,7 @@ class SensorModel:
     """
     
     def __init__(self, likelihood_field_path, metadata_path, distance_map_path,
-                 z_hit=0.95, z_random=0.05, sigma_hit=0.2):
+                 z_hit=0.95, z_random=0.05, sigma_hit=0.2, laser_offset_angle=0.0):
         """
         Initialize sensor model.
         
@@ -20,6 +20,8 @@ class SensorModel:
             z_hit: Weight for hit probability (z_hit in algorithm)
             z_random: Weight for random measurement (z_random in algorithm)
             sigma_hit: Standard deviation for measurement noise (σ_hit)
+            laser_offset_angle: Mounting offset angle of laser relative to base_link (radians)
+                               Default 0.0 assumes laser points forward same as base_link
         """
         # Load likelihood field (not actually used in simplified version)
         # self.likelihood_field = np.load(likelihood_field_path)
@@ -39,6 +41,7 @@ class SensorModel:
         self.z_hit = z_hit
         self.z_random = z_random
         self.sigma_hit = sigma_hit
+        self.laser_offset_angle = laser_offset_angle
         
         # Sensor specifications (will be updated from LaserScan)
         self.z_max = None  # Maximum range
@@ -89,9 +92,10 @@ class SensorModel:
         q = 1.0
         
         # Line 2: for all k do (iterate through laser beams)
-        # Downsample for efficiency (every 10th beam)
-        step = 10
+        # Use ALL beams for maximum heading discrimination
+        step = 1  # Use every beam - no subsampling
         
+        beam_count = 0
         for k in range(0, len(z_t), step):
             z_k = z_t[k]
             
@@ -103,15 +107,20 @@ class SensorModel:
             if z_k < laser_scan.range_min:
                 continue
             
+            beam_count += 1
+            
             # Beam angle in world frame
             theta_k = laser_scan.angle_min + k * laser_scan.angle_increment
+            
+            # Account for laser mounting offset relative to base_link
+            theta_k_world = theta_k + self.laser_offset_angle
             
             # Assuming sensor is at robot center (x_k,sens = 0, y_k,sens = 0)
             # Line 4-5: Compute endpoint location
             # x_z_k = x + x_k,sens·cos(θ) - y_k,sens·sin(θ) + z_k·cos(θ + θ_k,sens)
             # y_z_k = y + y_k,sens·cos(θ) + x_k,sens·sin(θ) + z_k·sin(θ + θ_k,sens)
-            x_z_k = x + z_k * np.cos(theta + theta_k)
-            y_z_k = y + z_k * np.sin(theta + theta_k)
+            x_z_k = x + z_k * np.cos(theta + theta_k_world)
+            y_z_k = y + z_k * np.sin(theta + theta_k_world)
             
             # Line 6: Check lookup table (distance matrix)
             # Convert to map coordinates
@@ -122,7 +131,7 @@ class SensorModel:
                 # Get minimum distance from distance map
                 dist = self.distance_map[my, mx]
             else:
-                # Outside map - assign large distance
+                # Outside map - assign large distance (penalizes wrong heading)
                 dist = self.z_max
             
             # Line 7: Compute probability density
@@ -133,6 +142,10 @@ class SensorModel:
             
             # Line 8: Multiply probabilities
             q *= p
+        
+        # If we didn't process any beams, return low weight
+        if beam_count == 0:
+            q = 1e-10
         
         # Line 9: return q
         return q

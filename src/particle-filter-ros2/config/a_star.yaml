@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    occupancy_threshold: 50
+    treat_unknown_as_obstacle: true
+    allow_diagonal: true
+    robot_radius: 0.12   # meters (TB3 Burger ~0.105, keep margin)
+    lookahead: 0.30
+    k_lin: 0.6
+    k_ang: 1.8
+    max_lin_vel: 0.22
+    max_ang_vel: 2.0
+    goal_tolerance_lin: 0.10
+    yaw_threshold_move: 0.4
+    sync_robot_pose: true
+    set_pose_service: "/world/default/set_pose"
+    entity_name: "burger"
