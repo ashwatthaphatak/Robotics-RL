@@ -38,7 +38,7 @@ from rclpy.qos import (
     DurabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TwistStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
@@ -113,11 +113,7 @@ class AStarPlanner(Node):
         self.goal_xy: Optional[Tuple[float, float]] = None
         self.path_world: List[Tuple[float, float]] = []
         self.path_pub = self.create_publisher(Path, '/plan', 10)
-        # Use TwistStamped so we are compatible with
-        # TurtleBot3 Gazebo bridges and teleop, which
-        # expect `/cmd_vel` to carry TwistStamped on
-        # Jazzy and later.
-        self.cmd_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pending_map_pose: Optional[Tuple[float, float, float]] = None
 
         # Subscriptions
@@ -395,15 +391,10 @@ class AStarPlanner(Node):
         return self.path_world[-1]
 
     def _publish_cmd(self, v: float, w: float) -> None:
-        cmd = TwistStamped()
-        cmd.header.stamp = self.get_clock().now().to_msg()
-        # Frame is not strictly used by the diff drive
-        # plugin, but keeping it consistent with robot
-        # base makes debugging TF easier.
-        cmd.header.frame_id = 'base_footprint'
-        cmd.twist.linear.x = float(v)
-        cmd.twist.angular.z = float(w)
-        self.cmd_pub.publish(cmd)
+        t = Twist()
+        t.linear.x = float(v)
+        t.angular.z = float(w)
+        self.cmd_pub.publish(t)
 
     # -------------------- Helpers --------------------
     def _inflate_blocked(self, blocked: np.ndarray) -> np.ndarray:
