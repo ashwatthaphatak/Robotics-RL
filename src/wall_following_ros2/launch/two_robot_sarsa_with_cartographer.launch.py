@@ -8,8 +8,12 @@ from launch.actions import (
     AppendEnvironmentVariable,
     ExecuteProcess,
     TimerAction,
+    GroupAction,
+    SetEnvironmentVariable,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import PushRosNamespace
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -21,11 +25,14 @@ def generate_launch_description():
 
     world_path = os.path.join(pkg_share, 'worlds', 'largemaze.world')
     rviz_config = os.path.join(nav2_bringup, 'rviz', 'nav2_default_view.rviz')
+    model_sdf = os.path.join(tb3_gz, 'models', 'turtlebot3_burger', 'model.sdf')
 
     src_dir = os.path.join(
         os.path.expanduser('~'),
         'ros2_ws', 'src', 'wall_following_ros2', 'src'
     )
+
+    set_model = SetEnvironmentVariable('TURTLEBOT3_MODEL', 'burger')
 
     # Gazebo + GUI
     gzserver = IncludeLaunchDescription(
@@ -39,22 +46,38 @@ def generate_launch_description():
         launch_arguments={'gz_args': '-g -v2'}.items(),
     )
 
+    # Ensure Gazebo can load ros_gz_sim system plugins (e.g., set_entity_pose)
+    plugin_path = os.path.join(os.environ.get('ROS_DISTRO_PREFIX', '/opt/ros/jazzy'), 'lib')
+    set_system_plugins = AppendEnvironmentVariable(
+        'GZ_SIM_SYSTEM_PLUGIN_PATH',
+        plugin_path
+    )
+    # Use frame_prefix so TFs are isolated per robot
     robot_state_pub = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(tb3_gz, 'launch', 'robot_state_publisher.launch.py')),
-        launch_arguments={'use_sim_time': 'true'}.items()
+        launch_arguments={'use_sim_time': 'true', 'frame_prefix': 'robot1'}.items()
+    )
+    robot_state_pub_2 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(tb3_gz, 'launch', 'robot_state_publisher.launch.py')),
+        launch_arguments={'use_sim_time': 'true', 'frame_prefix': 'robot2'}.items()
     )
 
-    # Spawn two TB3s at different corners of the maze
-    spawn_tb3_1 = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(tb3_gz, 'launch', 'spawn_turtlebot3.launch.py')),
-        launch_arguments={'x_pose': '-2.0', 'y_pose': '-3.25'}.items()
+    # Spawn two TB3s with explicit names so bridge remaps match
+    spawn_tb3_1 = ExecuteProcess(
+        cmd=['ros2', 'run', 'ros_gz_sim', 'create',
+             '-name', 'robot1',
+             '-file', model_sdf,
+             '-x', '-2.0', '-y', '-3.25', '-z', '0.01'],
+        output='screen',
     )
-    spawn_tb3_2 = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(tb3_gz, 'launch', 'spawn_turtlebot3.launch.py')),
-        launch_arguments={'x_pose': '2.0', 'y_pose': '3.25'}.items()
+    spawn_tb3_2 = ExecuteProcess(
+        cmd=['ros2', 'run', 'ros_gz_sim', 'create',
+             '-name', 'robot2',
+             '-file', model_sdf,
+             '-x', '2.0', '-y', '3.25', '-z', '0.01'],
+        output='screen',
     )
 
     delayed_spawn_1 = TimerAction(period=5.0, actions=[spawn_tb3_1])
@@ -65,24 +88,33 @@ def generate_launch_description():
         os.path.join(tb3_gz, 'models')
     )
 
-    # NOTE: This uses the same bridge topics for both robots; adjust to per-robot
-    # topics if your Gazebo world publishes distinct names per model.
-    bridge_topics = ExecuteProcess(
+    # Bridges: explicit ROS topic names per robot -> Gazebo topics (including TF from diffdrive)
+    bridge_r1 = ExecuteProcess(
         cmd=[
             'ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
-            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan:=/world/default/model/robot1/link/base_scan/sensor/hls_lfcd_lds/scan',
+            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry:=/model/robot1/odometry',
+            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V:=/model/robot1/tf',
+            '/joint_states@sensor_msgs/msg/JointState@gz.msgs.Model:=/model/robot1/joint_states',
+            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist:=/model/robot1/cmd_vel',
             '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'
         ],
-        output='screen'
+        output='screen',
+        additional_env={'ROS_NAMESPACE': 'robot1'}
     )
 
-    bridge_service = ExecuteProcess(
+    bridge_r2 = ExecuteProcess(
         cmd=[
             'ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
-            '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'
+            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan:=/world/default/model/robot2/link/base_scan/sensor/hls_lfcd_lds/scan',
+            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry:=/model/robot2/odometry',
+            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V:=/model/robot2/tf',
+            '/joint_states@sensor_msgs/msg/JointState@gz.msgs.Model:=/model/robot2/joint_states',
+            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist:=/model/robot2/cmd_vel',
+            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'
         ],
-        output='screen'
+        output='screen',
+        additional_env={'ROS_NAMESPACE': 'robot2'}
     )
 
     rviz = ExecuteProcess(
@@ -91,34 +123,112 @@ def generate_launch_description():
     )
 
     # Two independent SARSA run nodes in different namespaces.
-    # Ensure /robot1/scan,/robot1/cmd_vel and /robot2/scan,/robot2/cmd_vel are bridged.
-    sarsa_1 = ExecuteProcess(
-        cmd=[
-            'python3',
-            os.path.join(src_dir, 'sarsa_run.py'),
-            '--max_linear', '0.5',
-            '--ros-args', '-r', '__ns:=/robot1'
-        ],
-        output='screen'
-    )
-    sarsa_2 = ExecuteProcess(
-        cmd=[
-            'python3',
-            os.path.join(src_dir, 'sarsa_run.py'),
-            '--max_linear', '0.5',
-            '--ros-args', '-r', '__ns:=/robot2'
-        ],
-        output='screen'
-    )
+    sarsa_1 = GroupAction([
+        PushRosNamespace('robot1'),
+        ExecuteProcess(
+            cmd=[
+                'python3',
+                os.path.join(src_dir, 'sarsa_run.py'),
+                '--max_linear', '0.5',
+            ],
+            output='screen'
+        )
+    ])
+    sarsa_2 = GroupAction([
+        PushRosNamespace('robot2'),
+        ExecuteProcess(
+            cmd=[
+                'python3',
+                os.path.join(src_dir, 'sarsa_run.py'),
+                '--max_linear', '0.5',
+            ],
+            output='screen'
+        )
+    ])
 
-    # Cartographer for mapping (single instance)
-    cartographer_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(tb3_cartographer, 'launch', 'cartographer.launch.py')
+    carto_config_dir = os.path.join(pkg_share, 'config')
+
+    # Cartographer per robot (explicit nodes with remaps to /tf, /tf_static, /robotX/{scan,odom,map})
+    carto_r1 = GroupAction([
+        PushRosNamespace('robot1'),
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_node',
+            name='cartographer_node',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+            arguments=[
+                '-configuration_directory', carto_config_dir,
+                '-configuration_basename', 'cartographer_robot1.lua'
+            ],
+            remappings=[
+                ('/tf', '/tf'),
+                ('/tf_static', '/tf_static'),
+                ('scan', '/robot1/scan'),
+                ('odom', '/robot1/odom'),
+                ('submap_query', '/robot1/submap_query'),
+                ('submap_list', '/robot1/submap_list'),
+                ('trajectory_node_list', '/robot1/trajectory_node_list'),
+                ('landmark_poses_list', '/robot1/landmark_poses_list'),
+            ],
         ),
-        launch_arguments={'use_sim_time': 'true'}.items(),
-    )
-    delayed_cartographer = TimerAction(period=10.0, actions=[cartographer_launch])
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_occupancy_grid_node',
+            name='cartographer_occupancy_grid_node',
+            output='screen',
+            parameters=[{'use_sim_time': True, 'resolution': 0.05, 'publish_period_sec': 1.0}],
+            remappings=[
+                ('/tf', '/tf'),
+                ('/tf_static', '/tf_static'),
+                ('/submap_list', '/robot1/submap_list'),
+                ('/submap_query', '/robot1/submap_query'),
+                ('/map', '/robot1/map'),
+            ],
+        ),
+    ])
+
+    carto_r2 = GroupAction([
+        PushRosNamespace('robot2'),
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_node',
+            name='cartographer_node',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+            arguments=[
+                '-configuration_directory', carto_config_dir,
+                '-configuration_basename', 'cartographer_robot2.lua'
+            ],
+            remappings=[
+                ('/tf', '/tf'),
+                ('/tf_static', '/tf_static'),
+                ('scan', '/robot2/scan'),
+                ('odom', '/robot2/odom'),
+                ('submap_query', '/robot2/submap_query'),
+                ('submap_list', '/robot2/submap_list'),
+                ('trajectory_node_list', '/robot2/trajectory_node_list'),
+                ('landmark_poses_list', '/robot2/landmark_poses_list'),
+            ],
+        ),
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_occupancy_grid_node',
+            name='cartographer_occupancy_grid_node',
+            output='screen',
+            parameters=[{'use_sim_time': True, 'resolution': 0.05, 'publish_period_sec': 1.0}],
+            remappings=[
+                ('/tf', '/tf'),
+                ('/tf_static', '/tf_static'),
+                ('/submap_list', '/robot2/submap_list'),
+                ('/submap_query', '/robot2/submap_query'),
+                ('/map', '/robot2/map'),
+            ],
+        ),
+    ])
+
+    delayed_cartographer = TimerAction(period=10.0, actions=[carto_r1])
+    delayed_cartographer_2 = TimerAction(period=11.0, actions=[carto_r2])
 
     # Static transform between synthetic frames for stitching maps later.
     tf_between_robots = ExecuteProcess(
@@ -133,21 +243,24 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     for act in [
+        set_model,
+        set_system_plugins,
         set_env_vars,
         gzserver,
         gzclient,
         robot_state_pub,
+        robot_state_pub_2,
         delayed_spawn_1,
         delayed_spawn_2,
-        bridge_topics,
-        bridge_service,
+        bridge_r1,
+        bridge_r2,
         rviz,
         sarsa_1,
         sarsa_2,
         delayed_cartographer,
+        delayed_cartographer_2,
         tf_between_robots,
     ]:
         ld.add_action(act)
 
     return ld
-
